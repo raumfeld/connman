@@ -313,6 +313,7 @@ const char *g_supplicant_network_get_identifier(GSupplicantNetwork *network);
 const char *g_supplicant_network_get_path(GSupplicantNetwork *network);
 const void *g_supplicant_network_get_ssid(GSupplicantNetwork *network,
 							unsigned int *ssid_len);
+const unsigned char *g_supplicant_network_get_bssid(GSupplicantNetwork *network);
 const char *g_supplicant_network_get_mode(GSupplicantNetwork *network);
 const char *g_supplicant_network_get_security(GSupplicantNetwork *network);
 dbus_int16_t g_supplicant_network_get_signal(GSupplicantNetwork *network);

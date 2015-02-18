@@ -85,6 +85,10 @@ const char *connman_network_get_identifier(struct connman_network *network);
 void connman_network_set_index(struct connman_network *network, int index);
 int connman_network_get_index(struct connman_network *network);
 
+void connman_network_divert_index(struct connman_network *network, int index);
+void connman_network_reset_index(struct connman_network *network);
+int connman_network_get_original_index(struct connman_network *network);
+
 void connman_network_set_group(struct connman_network *network,
 						const char *group);
 const char *connman_network_get_group(struct connman_network *network);

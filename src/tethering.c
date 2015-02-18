@@ -48,7 +48,9 @@
 #define DBUS_TYPE_UNIX_FD -1
 #endif
 
-#define BRIDGE_NAME "tether"
+#define BRIDGE_INTERFACE "tether"
+#define ETH_UPLINK_INTERFACE "eth0"
+#define ETH_SLAVE_INTERFACE "eth1"
 
 #define DEFAULT_MTU	1500
 
@@ -60,6 +62,8 @@ static GDHCPServer *tethering_dhcp_server = NULL;
 static struct connman_ippool *dhcp_ippool = NULL;
 static DBusConnection *connection;
 static GHashTable *pn_hash;
+
+static enum tethering_mode current_tethering_mode;
 
 struct connman_private_network {
 	char *owner;
@@ -94,7 +98,7 @@ const char *__connman_tethering_get_bridge(void)
 		return NULL;
 	}
 
-	return BRIDGE_NAME;
+	return BRIDGE_INTERFACE;
 }
 
 static void dhcp_server_debug(const char *str, void *data)
@@ -174,124 +178,212 @@ static void dhcp_server_stop(GDHCPServer *server)
 	g_dhcp_server_unref(server);
 }
 
+struct restart_data
+{
+	enum tethering_mode tether_mode;
+	const char *ifname;
+} g_restart_data;
+
 static void tethering_restart(struct connman_ippool *pool, void *user_data)
 {
+	struct restart_data *data = (struct restart_data *)(user_data);
 	DBG("pool %p", pool);
-	__connman_tethering_set_disabled();
-	__connman_tethering_set_enabled();
+	__connman_tethering_set_disabled(data->tether_mode);
+	__connman_tethering_set_enabled(data->tether_mode, data->ifname);
 }
 
-int __connman_tethering_set_enabled(void)
+static bool put_ethernet_interface_into_bridge (const char *ethernet_name,
+	int bridge_index)
 {
-	int index;
+	int ethernet_index = connman_inet_ifindex(ethernet_name);
+	if (ethernet_index < 0) {
+		connman_error("Failed to get index of ethernet device %s!", ethernet_name);
+		return FALSE;
+	}
+	struct connman_service *ethernet_service = connman_service_lookup_from_interface(ethernet_name);
+	if (ethernet_service)
+		__connman_service_disconnect(ethernet_service);
+	connman_inet_ifdown(ethernet_index);
+	int err = connman_inet_add_to_bridge(ethernet_index, BRIDGE_INTERFACE);
+	if (err < 0 && err != -EALREADY) {
+		connman_error("Failed to add ethernet interface %s to bridge %s (%s)!", ethernet_name, BRIDGE_INTERFACE, strerror(-err));
+		connman_inet_ifup(ethernet_index);
+		return FALSE;
+	}
+	if (ethernet_service) {
+		struct connman_network *ethernet_network = __connman_service_get_network(ethernet_service);
+		if (!ethernet_network) {
+			connman_error("Failed to get network from service for ethernet device %s!", ethernet_name);
+			connman_inet_remove_from_bridge(ethernet_index, BRIDGE_INTERFACE);
+			connman_inet_ifup(ethernet_index);
+			return FALSE;
+		}
+		connman_network_divert_index(ethernet_network, bridge_index);
+	}
+	connman_inet_ifup(ethernet_index);
+
+	return TRUE;
+}
+
+static bool pull_ethernet_interface_out_of_bridge (const char *ethernet_name,
+	int bridge_index)
+{
+	int ethernet_index = connman_inet_ifindex(ethernet_name);
+	if (ethernet_index < 0) {
+		connman_error("Failed to get index of ethernet device %s!", ethernet_name);
+		return FALSE;
+	}
+	struct connman_service *ethernet_service = connman_service_lookup_from_interface(ethernet_name);
+	if (ethernet_service)
+		__connman_service_disconnect(ethernet_service);
+	connman_inet_ifdown(ethernet_index);
+	int err = connman_inet_remove_from_bridge(ethernet_index, BRIDGE_INTERFACE);
+	if (err < 0 && err != -EALREADY) {
+		connman_error("Failed to remove ethernet interface %s from bridge %s (%s)!", ethernet_name, BRIDGE_INTERFACE, strerror(-err));
+		connman_inet_ifup(ethernet_index);
+		return FALSE;
+	}
+	struct connman_network *ethernet_network = ethernet_service ? __connman_service_get_network(ethernet_service) : NULL;
+	if (ethernet_network)
+		connman_network_reset_index(ethernet_network);
+	connman_inet_ifup(ethernet_index);
+
+	return TRUE;
+}
+
+int __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char *ifname)
+{
+	int last_tethering_state;
+	int bridge_index;
 	int err;
-	const char *gateway;
-	const char *broadcast;
-	const char *subnet_mask;
-	const char *start_ip;
-	const char *end_ip;
-	const char *dns;
-	unsigned char prefixlen;
-	char **ns;
+	const char *gateway = NULL;
+	const char *broadcast = NULL;
+	const char *subnet_mask = NULL;
+	const char *start_ip = NULL;
+	const char *end_ip = NULL;
+	const char *dns = NULL;
+	char **ns = NULL;
 
 	DBG("enabled %d", tethering_enabled + 1);
 
-	if (__sync_fetch_and_add(&tethering_enabled, 1) != 0)
-		return 0;
+	last_tethering_state = __sync_fetch_and_add(&tethering_enabled, 1);
+	if (last_tethering_state != 0)
+		return last_tethering_state > 0 ? 0 : -EAGAIN;
 
-	err = __connman_bridge_create(BRIDGE_NAME);
-	if (err < 0) {
+	bridge_index = connman_inet_ifindex(BRIDGE_INTERFACE);
+	if (bridge_index < 0) {
+		connman_error("Failed to get index of bridge device %s (%s)!",
+			BRIDGE_INTERFACE, strerror(-bridge_index));
 		__sync_fetch_and_sub(&tethering_enabled, 1);
 		return -EOPNOTSUPP;
 	}
 
-	index = connman_inet_ifindex(BRIDGE_NAME);
-	dhcp_ippool = __connman_ippool_create(index, 2, 252,
-						tethering_restart, NULL);
-	if (!dhcp_ippool) {
-		connman_error("Fail to create IP pool");
-		__connman_bridge_remove(BRIDGE_NAME);
-		__sync_fetch_and_sub(&tethering_enabled, 1);
-		return -EADDRNOTAVAIL;
+	if (tether_mode == TETHERING_MODE_BRIDGED_AP) {
+		if (!put_ethernet_interface_into_bridge(ETH_UPLINK_INTERFACE, bridge_index)) {
+			__sync_fetch_and_sub(&tethering_enabled, 1);
+			return -EOPNOTSUPP;
+		}
+		if (connman_inet_ifindex(ETH_SLAVE_INTERFACE) >= 0)
+			put_ethernet_interface_into_bridge(ETH_SLAVE_INTERFACE, bridge_index);
+	} else {
+		g_restart_data.tether_mode = tether_mode;
+		g_restart_data.ifname = ifname;
+		dhcp_ippool = __connman_ippool_create(bridge_index, 2, 252,
+					tethering_restart, &g_restart_data);
+		if (!dhcp_ippool) {
+			connman_error("Failed to create IP pool");
+			__sync_fetch_and_sub(&tethering_enabled, 1);
+			return -EADDRNOTAVAIL;
+		}
+
+		gateway = __connman_ippool_get_gateway(dhcp_ippool);
+		broadcast = __connman_ippool_get_broadcast(dhcp_ippool);
+		subnet_mask = __connman_ippool_get_subnet_mask(dhcp_ippool);
+		start_ip = __connman_ippool_get_start_ip(dhcp_ippool);
+		end_ip = __connman_ippool_get_end_ip(dhcp_ippool);
 	}
 
-	gateway = __connman_ippool_get_gateway(dhcp_ippool);
-	broadcast = __connman_ippool_get_broadcast(dhcp_ippool);
-	subnet_mask = __connman_ippool_get_subnet_mask(dhcp_ippool);
-	start_ip = __connman_ippool_get_start_ip(dhcp_ippool);
-	end_ip = __connman_ippool_get_end_ip(dhcp_ippool);
-
-	err = __connman_bridge_enable(BRIDGE_NAME, gateway,
+	err = __connman_bridge_enable(BRIDGE_INTERFACE, gateway,
 			connman_ipaddress_calc_netmask_len(subnet_mask),
 			broadcast);
 	if (err < 0 && err != -EALREADY) {
-		__connman_ippool_unref(dhcp_ippool);
-		__connman_bridge_remove(BRIDGE_NAME);
+		connman_error("Failed to enable bridge device %s (%s)!",
+			BRIDGE_INTERFACE, strerror(-err));
+		if (tether_mode != TETHERING_MODE_BRIDGED_AP)
+			__connman_ippool_unref(dhcp_ippool);
 		__sync_fetch_and_sub(&tethering_enabled, 1);
 		return -EADDRNOTAVAIL;
 	}
 
-	ns = connman_setting_get_string_list("FallbackNameservers");
-	if (ns) {
-		if (ns[0]) {
-			g_free(private_network_primary_dns);
-			private_network_primary_dns = g_strdup(ns[0]);
+	if (tether_mode != TETHERING_MODE_BRIDGED_AP) {
+		ns = connman_setting_get_string_list("FallbackNameservers");
+		if (ns) {
+			if (ns[0]) {
+				g_free(private_network_primary_dns);
+				private_network_primary_dns = g_strdup(ns[0]);
+			}
+			if (ns[1]) {
+				g_free(private_network_secondary_dns);
+				private_network_secondary_dns = g_strdup(ns[1]);
+			}
+
+			DBG("Fallback ns primary %s secondary %s",
+				private_network_primary_dns,
+				private_network_secondary_dns);
 		}
-		if (ns[1]) {
-			g_free(private_network_secondary_dns);
-			private_network_secondary_dns = g_strdup(ns[1]);
+
+		dns = gateway;
+		err = __connman_dnsproxy_add_listener(bridge_index);
+		if (err < 0) {
+			connman_error("Can't add listener %s to DNS proxy (%s)",
+				BRIDGE_INTERFACE, strerror(-err));
+			dns = private_network_primary_dns;
+			DBG("Serving %s nameserver to clients", dns);
 		}
 
-		DBG("Fallback ns primary %s secondary %s",
-			private_network_primary_dns,
-			private_network_secondary_dns);
+		tethering_dhcp_server = dhcp_server_start(BRIDGE_INTERFACE,
+							gateway, subnet_mask,
+							start_ip, end_ip,
+							24 * 3600, dns);
+		if (!tethering_dhcp_server) {
+			connman_error("Failed to start dhcp server");
+			__connman_bridge_disable(BRIDGE_INTERFACE);
+			if (tether_mode != TETHERING_MODE_BRIDGED_AP)
+				__connman_ippool_unref(dhcp_ippool);
+			__sync_fetch_and_sub(&tethering_enabled, 1);
+			return -EOPNOTSUPP;
+		}
+
+		if (tether_mode == TETHERING_MODE_NAT) {
+			unsigned char prefixlen = connman_ipaddress_calc_netmask_len(subnet_mask);
+			err = __connman_nat_enable(BRIDGE_INTERFACE, start_ip, prefixlen);
+			if (err < 0) {
+				connman_error("Cannot enable NAT %d/%s", err, strerror(-err));
+				dhcp_server_stop(tethering_dhcp_server);
+				__connman_bridge_disable(BRIDGE_INTERFACE);
+				if (tether_mode != TETHERING_MODE_BRIDGED_AP)
+					__connman_ippool_unref(dhcp_ippool);
+				__sync_fetch_and_sub(&tethering_enabled, 1);
+				return -EOPNOTSUPP;
+			}
+		}
 	}
 
-	dns = gateway;
-	if (__connman_dnsproxy_add_listener(index) < 0) {
-		connman_error("Can't add listener %s to DNS proxy",
-								BRIDGE_NAME);
-		dns = private_network_primary_dns;
-		DBG("Serving %s nameserver to clients", dns);
-	}
-
-	tethering_dhcp_server = dhcp_server_start(BRIDGE_NAME,
-						gateway, subnet_mask,
-						start_ip, end_ip,
-						24 * 3600, dns);
-	if (!tethering_dhcp_server) {
-		__connman_bridge_disable(BRIDGE_NAME);
-		__connman_ippool_unref(dhcp_ippool);
-		__connman_bridge_remove(BRIDGE_NAME);
-		__sync_fetch_and_sub(&tethering_enabled, 1);
-		return -EOPNOTSUPP;
-	}
-
-	prefixlen = connman_ipaddress_calc_netmask_len(subnet_mask);
-	err = __connman_nat_enable(BRIDGE_NAME, start_ip, prefixlen);
-	if (err < 0) {
-		connman_error("Cannot enable NAT %d/%s", err, strerror(-err));
-		dhcp_server_stop(tethering_dhcp_server);
-		__connman_bridge_disable(BRIDGE_NAME);
-		__connman_ippool_unref(dhcp_ippool);
-		__connman_bridge_remove(BRIDGE_NAME);
-		__sync_fetch_and_sub(&tethering_enabled, 1);
-		return -EOPNOTSUPP;
-	}
-
-	err = __connman_ipv6pd_setup(BRIDGE_NAME);
-	if (err < 0 && err != -EINPROGRESS)
+	err = __connman_ipv6pd_setup(BRIDGE_INTERFACE);
+	if (err < 0 && err != -EINPROGRESS) {
 		DBG("Cannot setup IPv6 prefix delegation %d/%s", err,
 			strerror(-err));
+	}
 
+	current_tethering_mode = tether_mode;
 	DBG("tethering started");
 
 	return 0;
 }
 
-void __connman_tethering_set_disabled(void)
+void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 {
-	int index;
+	int bridge_index;
 
 	DBG("enabled %d", tethering_enabled - 1);
 
@@ -300,26 +392,34 @@ void __connman_tethering_set_disabled(void)
 
 	__connman_ipv6pd_cleanup();
 
-	index = connman_inet_ifindex(BRIDGE_NAME);
-	__connman_dnsproxy_remove_listener(index);
+	bridge_index = connman_inet_ifindex(BRIDGE_INTERFACE);
 
-	__connman_nat_disable(BRIDGE_NAME);
+	if (tether_mode == TETHERING_MODE_BRIDGED_AP) {
+		pull_ethernet_interface_out_of_bridge(ETH_UPLINK_INTERFACE, bridge_index);
+		if (connman_inet_ifindex(ETH_SLAVE_INTERFACE) >= 0)
+			pull_ethernet_interface_out_of_bridge(ETH_SLAVE_INTERFACE, bridge_index);
+	} else {
+		__connman_dnsproxy_remove_listener(bridge_index);
 
-	dhcp_server_stop(tethering_dhcp_server);
+		if (tether_mode == TETHERING_MODE_NAT)
+			__connman_nat_disable(BRIDGE_INTERFACE);
 
-	tethering_dhcp_server = NULL;
+		if (tethering_dhcp_server) {
+			dhcp_server_stop(tethering_dhcp_server);
+			tethering_dhcp_server = NULL;
+		}
 
-	__connman_bridge_disable(BRIDGE_NAME);
+		__connman_ippool_unref(dhcp_ippool);
 
-	__connman_ippool_unref(dhcp_ippool);
+		g_free(private_network_primary_dns);
+		private_network_primary_dns = NULL;
+		g_free(private_network_secondary_dns);
+		private_network_secondary_dns = NULL;
+	}
 
-	__connman_bridge_remove(BRIDGE_NAME);
+	__connman_bridge_disable(BRIDGE_INTERFACE);
 
-	g_free(private_network_primary_dns);
-	private_network_primary_dns = NULL;
-	g_free(private_network_secondary_dns);
-	private_network_secondary_dns = NULL;
-
+	current_tethering_mode = 0;
 	DBG("tethering stopped");
 }
 
@@ -353,7 +453,7 @@ static void setup_tun_interface(unsigned int flags, unsigned change,
 
 	connman_inet_ifup(pn->index);
 
-	err = __connman_nat_enable(BRIDGE_NAME, server_ip, prefixlen);
+	err = __connman_nat_enable(BRIDGE_INTERFACE, server_ip, prefixlen);
 	if (err < 0) {
 		connman_error("failed to enable NAT");
 		goto error;
@@ -397,7 +497,7 @@ static void remove_private_network(gpointer user_data)
 {
 	struct connman_private_network *pn = user_data;
 
-	__connman_nat_disable(BRIDGE_NAME);
+	__connman_nat_disable(BRIDGE_INTERFACE);
 	connman_rtnl_remove_watch(pn->iface_watch);
 	__connman_ippool_unref(pn->pool);
 
@@ -538,6 +638,8 @@ int __connman_tethering_init(void)
 	pn_hash = g_hash_table_new_full(g_str_hash, g_str_equal,
 						NULL, remove_private_network);
 
+	__connman_bridge_create(BRIDGE_INTERFACE);
+
 	return 0;
 }
 
@@ -549,9 +651,9 @@ void __connman_tethering_cleanup(void)
 	if (tethering_enabled > 0) {
 		if (tethering_dhcp_server)
 			dhcp_server_stop(tethering_dhcp_server);
-		__connman_bridge_disable(BRIDGE_NAME);
-		__connman_bridge_remove(BRIDGE_NAME);
-		__connman_nat_disable(BRIDGE_NAME);
+		__connman_bridge_disable(BRIDGE_INTERFACE);
+		__connman_bridge_remove(BRIDGE_INTERFACE);
+		__connman_nat_disable(BRIDGE_INTERFACE);
 	}
 
 	if (!connection)
@@ -559,4 +661,22 @@ void __connman_tethering_cleanup(void)
 
 	g_hash_table_destroy(pn_hash);
 	dbus_connection_unref(connection);
+}
+
+int connman_tethering_get_target_index_for_device(struct connman_device *device)
+{
+	DBG("device=%s", connman_device_get_string(device, "Interface"));
+
+	// In bridged-ap mode, we need to return the index of the bridge device,
+	// such that the caller will setup the network to talk to the bridge
+	// device (tether) instead of the actual ethernet device (eth0 or eth1).
+	if (current_tethering_mode == TETHERING_MODE_BRIDGED_AP)
+		return connman_inet_ifindex(BRIDGE_INTERFACE);
+
+	return connman_device_get_index(device);
+}
+
+bool connman_tethering_is_bridged_ap_mode_active()
+{
+	return current_tethering_mode == TETHERING_MODE_BRIDGED_AP;
 }

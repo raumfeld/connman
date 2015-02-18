@@ -131,11 +131,12 @@ bool connman_service_get_autoconnect(struct connman_service *service);
 
 struct connman_service *connman_service_lookup_from_network(struct connman_network *network);
 struct connman_service *connman_service_lookup_from_identifier(const char* identifier);
+struct connman_service *connman_service_lookup_from_interface(const char *interface);
 
 void connman_service_create_ip4config(struct connman_service *service,
-								int index);
+								int index, int original_index);
 void connman_service_create_ip6config(struct connman_service *service,
-								int index);
+								int index, int original_index);
 
 #ifdef __cplusplus
 }

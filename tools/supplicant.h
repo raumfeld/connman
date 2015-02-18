@@ -120,6 +120,7 @@ struct supplicant_network;
 struct supplicant_interface *supplicant_network_get_interface(struct supplicant_network *network);
 const char *supplicant_network_get_name(struct supplicant_network *network);
 const char *supplicant_network_get_identifier(struct supplicant_network *network);
+const unsigned char *supplicant_network_get_bssid(struct supplicant_network *network);
 enum supplicant_mode supplicant_network_get_mode(struct supplicant_network *network);
 
 struct supplicant_callbacks {

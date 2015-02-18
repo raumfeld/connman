@@ -48,6 +48,7 @@
 #include <connman/rtnl.h>
 #include <connman/log.h>
 #include <connman/setting.h>
+#include <connman/tethering.h>
 
 static bool eth_tethering = false;
 
@@ -169,7 +170,7 @@ static void add_network(struct connman_device *device,
 			struct ethernet_data *ethernet)
 {
 	struct connman_network *network;
-	int index;
+	int original_index, index, vid;
 	char *ifname;
 
 	network = connman_network_create("carrier",
@@ -177,8 +178,11 @@ static void add_network(struct connman_device *device,
 	if (!network)
 		return;
 
-	index = connman_device_get_index(device);
-	connman_network_set_index(network, index);
+	original_index = connman_device_get_index(device);
+	index = connman_tethering_get_target_index_for_device(device);
+	connman_network_set_index(network, original_index);
+	if (original_index != index)
+		connman_network_divert_index(network, index);
 	ifname = connman_inet_ifname(index);
 	if (!ifname)
 		return;
@@ -405,6 +409,8 @@ static void eth_tech_disable_tethering(struct connman_technology *technology,
 
 static int eth_tech_set_tethering(struct connman_technology *technology,
 				const char *identifier, const char *passphrase,
+				const char *frequency,
+				enum tethering_mode tether_mode,
 				const char *bridge, bool enabled)
 {
 	if (!connman_technology_is_tethering_allowed(
