@@ -66,6 +66,8 @@ struct connman_technology {
 					      */
 	char *tethering_ident;
 	char *tethering_passphrase;
+	char *tethering_frequency;
+	enum tethering_mode tethering_mode;
 
 	bool enable_persistent; /* Save the tech state */
 
@@ -155,11 +157,38 @@ static const char *get_name(enum connman_service_type type)
 	return NULL;
 }
 
+static enum tethering_mode tether_mode_from_string(const char *mode)
+{
+	if (g_strcmp0(mode, "nat") == 0)
+		return TETHERING_MODE_NAT;
+	if (g_strcmp0(mode, "bridged-ap") == 0)
+		return TETHERING_MODE_BRIDGED_AP;
+	if (g_strcmp0(mode, "lone-ap") == 0)
+		return TETHERING_MODE_LONE_AP;
+
+	return -1;
+}
+
+static char * tether_mode_to_string(enum tethering_mode mode)
+{
+	switch (mode) {
+	case TETHERING_MODE_NAT:
+		return "nat";
+	case TETHERING_MODE_BRIDGED_AP:
+		return "bridged-ap";
+	case TETHERING_MODE_LONE_AP:
+		return "lone-ap";
+	}
+
+	return NULL;
+}
+
 static void technology_save(struct connman_technology *technology)
 {
 	GKeyFile *keyfile;
 	gchar *identifier;
 	const char *name = get_name(technology->type);
+	char* tether_mode;
 
 	DBG("technology %p type %d name %s", technology, technology->type,
 									name);
@@ -189,6 +218,16 @@ static void technology_save(struct connman_technology *technology)
 		g_key_file_set_string(keyfile, identifier,
 					"Tethering.Passphrase",
 					technology->tethering_passphrase);
+
+	if (technology->tethering_frequency)
+		g_key_file_set_string(keyfile, identifier,
+					"Tethering.Frequency",
+					technology->tethering_frequency);
+
+	tether_mode = tether_mode_to_string(technology->tethering_mode);
+	if (tether_mode)
+		g_key_file_set_string(keyfile, identifier,
+					"Tethering.Mode", tether_mode);
 
 done:
 	g_free(identifier);
@@ -224,9 +263,9 @@ void connman_technology_tethering_notify(struct connman_technology *technology,
 	tethering_changed(technology);
 
 	if (enabled)
-		__connman_tethering_set_enabled();
+		__connman_tethering_set_enabled(technology->tethering_mode);
 	else
-		__connman_tethering_set_disabled();
+		__connman_tethering_set_disabled(technology->tethering_mode);
 }
 
 static int set_tethering(struct connman_technology *technology,
@@ -259,7 +298,12 @@ static int set_tethering(struct connman_technology *technology,
 		if (!driver || !driver->set_tethering)
 			continue;
 
+		if (enabled && !technology->tethering_mode)
+			technology->tethering_mode = TETHERING_MODE_NAT;
+
 		err = driver->set_tethering(technology, ident, passphrase,
+				technology->tethering_frequency,
+				technology->tethering_mode,
 				bridge, enabled);
 
 		if (result == -EINPROGRESS)
@@ -379,6 +423,7 @@ static void technology_load(struct connman_technology *technology)
 	GKeyFile *keyfile;
 	gchar *identifier;
 	GError *error = NULL;
+	enum tethering_mode tether_mode;
 	bool enable, need_saving = false;
 
 	DBG("technology %p", technology);
@@ -428,6 +473,16 @@ static void technology_load(struct connman_technology *technology)
 
 	technology->tethering_passphrase = g_key_file_get_string(keyfile,
 				identifier, "Tethering.Passphrase", NULL);
+
+	technology->tethering_frequency = g_key_file_get_string(keyfile,
+				identifier, "Tethering.Frequency", NULL);
+
+	tether_mode = tether_mode_from_string(g_key_file_get_string(keyfile,
+				identifier, "Tethering.Mode", NULL));
+	technology->tethering_mode = tether_mode < 0
+			? TETHERING_MODE_NAT
+			: tether_mode;
+
 done:
 	g_free(identifier);
 
@@ -526,6 +581,16 @@ static void append_properties(DBusMessageIter *iter,
 		connman_dbus_dict_append_basic(&dict, "TetheringPassphrase",
 					DBUS_TYPE_STRING,
 					&technology->tethering_passphrase);
+
+	if (technology->tethering_frequency)
+		connman_dbus_dict_append_basic(&dict, "TetheringFrequency",
+					DBUS_TYPE_STRING,
+					&technology->tethering_frequency);
+
+	str = tether_mode_to_string(technology->tethering_mode);
+	if (str)
+		connman_dbus_dict_append_basic(&dict, "TetheringMode",
+					DBUS_TYPE_STRING, &str);
 
 	connman_dbus_dict_close(iter, &dict);
 }
@@ -939,6 +1004,50 @@ static DBusMessage *set_property(DBusConnection *conn,
 					DBUS_TYPE_STRING,
 					&technology->tethering_passphrase);
 		}
+	} else if (g_str_equal(name, "TetheringFrequency")) {
+		const char *str;
+
+		dbus_message_iter_get_basic(&value, &str);
+
+		if (technology->type != CONNMAN_SERVICE_TYPE_WIFI)
+			return __connman_error_not_supported(msg);
+
+		if (strlen(str) < 1 || strlen(str) > 32)
+			return __connman_error_invalid_arguments(msg);
+
+		if (g_strcmp0(technology->tethering_frequency, str) != 0) {
+			g_free(technology->tethering_frequency);
+			technology->tethering_frequency = g_strdup(str);
+			technology_save(technology);
+
+			connman_dbus_property_changed_basic(technology->path,
+						CONNMAN_TECHNOLOGY_INTERFACE,
+						"TetheringFrequency",
+						DBUS_TYPE_STRING,
+						&technology->tethering_frequency);
+		}
+	} else if (g_str_equal(name, "TetheringMode")) {
+		const char *str;
+
+		dbus_message_iter_get_basic(&value, &str);
+
+		if (technology->type != CONNMAN_SERVICE_TYPE_WIFI)
+			return __connman_error_not_supported(msg);
+
+		enum tethering_mode tether_mode = tether_mode_from_string(str);
+		if (tether_mode < 0)
+			return __connman_error_invalid_arguments(msg);
+
+		if (technology->tethering_mode != tether_mode) {
+			technology->tethering_mode = tether_mode;
+			technology_save(technology);
+
+			connman_dbus_property_changed_basic(technology->path,
+						CONNMAN_TECHNOLOGY_INTERFACE,
+						"TetheringMode",
+						DBUS_TYPE_STRING,
+						&str);
+		}
 	} else if (g_str_equal(name, "Powered")) {
 		dbus_bool_t enable;
 
@@ -1158,6 +1267,7 @@ static void technology_put(struct connman_technology *technology)
 	g_free(technology->regdom);
 	g_free(technology->tethering_ident);
 	g_free(technology->tethering_passphrase);
+	g_free(technology->tethering_frequency);
 	g_free(technology);
 }
 

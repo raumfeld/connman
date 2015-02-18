@@ -176,12 +176,13 @@ static void dhcp_server_stop(GDHCPServer *server)
 
 static void tethering_restart(struct connman_ippool *pool, void *user_data)
 {
+	enum tethering_mode tether_mode = *(enum tethering_mode*)(user_data);
 	DBG("pool %p", pool);
-	__connman_tethering_set_disabled();
-	__connman_tethering_set_enabled();
+	__connman_tethering_set_disabled(tether_mode);
+	__connman_tethering_set_enabled(tether_mode);
 }
 
-void __connman_tethering_set_enabled(void)
+void __connman_tethering_set_enabled(enum tethering_mode tether_mode)
 {
 	int index;
 	int err;
@@ -206,20 +207,27 @@ void __connman_tethering_set_enabled(void)
 	}
 
 	index = connman_inet_ifindex(BRIDGE_NAME);
-	dhcp_ippool = __connman_ippool_create(index, 2, 252,
-						tethering_restart, NULL);
-	if (!dhcp_ippool) {
-		connman_error("Fail to create IP pool");
-		__connman_bridge_remove(BRIDGE_NAME);
-		__sync_fetch_and_sub(&tethering_enabled, 1);
-		return;
-	}
 
-	gateway = __connman_ippool_get_gateway(dhcp_ippool);
-	broadcast = __connman_ippool_get_broadcast(dhcp_ippool);
-	subnet_mask = __connman_ippool_get_subnet_mask(dhcp_ippool);
-	start_ip = __connman_ippool_get_start_ip(dhcp_ippool);
-	end_ip = __connman_ippool_get_end_ip(dhcp_ippool);
+	if (tether_mode == TETHERING_MODE_BRIDGED_AP) {
+		// TODO: implement!
+		connman_error("bridged-ap mode is not implemented yet!\n");
+		return;
+	} else {
+		dhcp_ippool = __connman_ippool_create(index, 2, 252,
+					tethering_restart, &tether_mode);
+		if (!dhcp_ippool) {
+			connman_error("Fail to create IP pool");
+			__connman_bridge_remove(BRIDGE_NAME);
+			__sync_fetch_and_sub(&tethering_enabled, 1);
+			return;
+		}
+
+		gateway = __connman_ippool_get_gateway(dhcp_ippool);
+		broadcast = __connman_ippool_get_broadcast(dhcp_ippool);
+		subnet_mask = __connman_ippool_get_subnet_mask(dhcp_ippool);
+		start_ip = __connman_ippool_get_start_ip(dhcp_ippool);
+		end_ip = __connman_ippool_get_end_ip(dhcp_ippool);
+	}
 
 	err = __connman_bridge_enable(BRIDGE_NAME, gateway,
 			connman_ipaddress_calc_netmask_len(subnet_mask),
@@ -267,27 +275,30 @@ void __connman_tethering_set_enabled(void)
 		return;
 	}
 
-	prefixlen = connman_ipaddress_calc_netmask_len(subnet_mask);
-	err = __connman_nat_enable(BRIDGE_NAME, start_ip, prefixlen);
-	if (err < 0) {
-		connman_error("Cannot enable NAT %d/%s", err, strerror(-err));
-		dhcp_server_stop(tethering_dhcp_server);
-		__connman_bridge_disable(BRIDGE_NAME);
-		__connman_ippool_unref(dhcp_ippool);
-		__connman_bridge_remove(BRIDGE_NAME);
-		__sync_fetch_and_sub(&tethering_enabled, 1);
-		return;
+	if (tether_mode == TETHERING_MODE_NAT) {
+		prefixlen = connman_ipaddress_calc_netmask_len(subnet_mask);
+		err = __connman_nat_enable(BRIDGE_NAME, start_ip, prefixlen);
+		if (err < 0) {
+			connman_error("Cannot enable NAT %d/%s", err, strerror(-err));
+			dhcp_server_stop(tethering_dhcp_server);
+			__connman_bridge_disable(BRIDGE_NAME);
+			__connman_ippool_unref(dhcp_ippool);
+			__connman_bridge_remove(BRIDGE_NAME);
+			__sync_fetch_and_sub(&tethering_enabled, 1);
+			return;
+		}
 	}
 
 	err = __connman_ipv6pd_setup(BRIDGE_NAME);
-	if (err < 0 && err != -EINPROGRESS)
+	if (err < 0 && err != -EINPROGRESS) {
 		DBG("Cannot setup IPv6 prefix delegation %d/%s", err,
 			strerror(-err));
+	}
 
 	DBG("tethering started");
 }
 
-void __connman_tethering_set_disabled(void)
+void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 {
 	int index;
 
@@ -301,15 +312,18 @@ void __connman_tethering_set_disabled(void)
 	index = connman_inet_ifindex(BRIDGE_NAME);
 	__connman_dnsproxy_remove_listener(index);
 
-	__connman_nat_disable(BRIDGE_NAME);
+	if (tether_mode == TETHERING_MODE_NAT)
+		__connman_nat_disable(BRIDGE_NAME);
 
-	dhcp_server_stop(tethering_dhcp_server);
-
-	tethering_dhcp_server = NULL;
+	if (tethering_dhcp_server) {
+		dhcp_server_stop(tethering_dhcp_server);
+		tethering_dhcp_server = NULL;
+	}
 
 	__connman_bridge_disable(BRIDGE_NAME);
 
-	__connman_ippool_unref(dhcp_ippool);
+	if (tether_mode != TETHERING_MODE_BRIDGED_AP)
+		__connman_ippool_unref(dhcp_ippool);
 
 	__connman_bridge_remove(BRIDGE_NAME);
 

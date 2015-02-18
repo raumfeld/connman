@@ -34,6 +34,12 @@ extern "C" {
  * @short_description: Functions for handling technology details
  */
 
+enum tethering_mode {
+	TETHERING_MODE_NAT = 1,
+	TETHERING_MODE_BRIDGED_AP = 2,
+	TETHERING_MODE_LONE_AP = 3,
+};
+
 struct connman_technology;
 
 void connman_technology_tethering_notify(struct connman_technology *technology,
@@ -59,6 +65,7 @@ struct connman_technology_driver {
 								int index);
 	int (*set_tethering) (struct connman_technology *technology,
 				const char *identifier, const char *passphrase,
+				const char *frequency, enum tethering_mode tether_mode,
 				const char *bridge, bool enabled);
 	int (*set_regdom) (struct connman_technology *technology,
 						const char *alpha2);

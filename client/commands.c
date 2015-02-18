@@ -518,6 +518,8 @@ static int tether_set(char *technology, int set_tethering)
 struct tether_properties {
 	int ssid_result;
 	int passphrase_result;
+	int frequency_result;
+	int mode_result;
 	int set_tethering;
 };
 
@@ -525,14 +527,18 @@ static int tether_update(struct tether_properties *tether)
 {
 	int ret;
 
-	if (tether->ssid_result == 0 && tether->passphrase_result == 0) {
+	if (tether->ssid_result == 0 && tether->passphrase_result == 0 &&
+			tether->frequency_result == 0 &&
+			tether->mode_result == 0) {
 		ret = tether_set("wifi", tether->set_tethering);
 		g_free(tether);
 		return ret;
 	}
 
 	if (tether->ssid_result != -EINPROGRESS &&
-			tether->passphrase_result != -EINPROGRESS) {
+			tether->passphrase_result != -EINPROGRESS &&
+			tether->frequency_result != -EINPROGRESS &&
+			tether->mode_result != -EINPROGRESS) {
 		g_free(tether);
 		return 0;
 	}
@@ -572,7 +578,40 @@ static int tether_set_passphrase_return(DBusMessageIter *iter,
 	return tether_update(tether);
 }
 
-static int tether_set_ssid(char *ssid, char *passphrase, int set_tethering)
+static int tether_set_frequency_return(DBusMessageIter *iter,
+		const char *error, void *user_data)
+{
+	struct tether_properties *tether = user_data;
+
+	if (!error) {
+		fprintf(stdout, "Wifi frequency set\n");
+		tether->frequency_result = 0;
+	} else {
+		fprintf(stderr, "Error setting wifi frequency: %s\n", error);
+		tether->frequency_result = -EINVAL;
+	}
+
+	return tether_update(tether);
+}
+
+static int tether_set_mode_return(DBusMessageIter *iter,
+		const char *error, void *user_data)
+{
+	struct tether_properties *tether = user_data;
+
+	if (!error) {
+		fprintf(stdout, "wifi mode set\n");
+		tether->mode_result = 0;
+	} else {
+		fprintf(stderr, "Error setting wifi mode: %s\n", error);
+		tether->mode_result = -EINVAL;
+	}
+
+	return tether_update(tether);
+}
+
+static int tether_set_ssid(char *ssid, char *passphrase, char *frequency,
+		char *mode, int set_tethering)
 {
 	struct tether_properties *tether = g_new(struct tether_properties, 1);
 
@@ -590,8 +629,22 @@ static int tether_set_ssid(char *ssid, char *passphrase, int set_tethering)
 			tether_set_passphrase_return, tether,
 			"TetheringPassphrase", DBUS_TYPE_STRING, &passphrase);
 
+	tether->frequency_result =__connmanctl_dbus_set_property(connection,
+			"/net/connman/technology/wifi",
+			"net.connman.Technology",
+			tether_set_frequency_return, tether,
+			"TetheringFrequency", DBUS_TYPE_STRING, &frequency);
+
+	tether->mode_result =__connmanctl_dbus_set_property(connection,
+			"/net/connman/technology/wifi",
+			"net.connman.Technology",
+			tether_set_mode_return, tether,
+			"TetheringMode", DBUS_TYPE_STRING, &mode);
+
 	if (tether->ssid_result != -EINPROGRESS &&
-			tether->passphrase_result != -EINPROGRESS) {
+			tether->passphrase_result != -EINPROGRESS &&
+			tether->frequency_result != -EINPROGRESS &&
+			tether->mode_result != -EINPROGRESS) {
 		g_free(tether);
 		return -ENXIO;
 	}
@@ -601,30 +654,33 @@ static int tether_set_ssid(char *ssid, char *passphrase, int set_tethering)
 
 static int cmd_tether(char *args[], int num, struct connman_option *options)
 {
-	char *ssid, *passphrase;
+	char *ssid, *passphrase, *frequency, *mode;
 	int set_tethering;
 
 	if (num < 3)
 		return -EINVAL;
 
-	passphrase = args[num - 1];
-	ssid = args[num - 2];
-
 	set_tethering = parse_boolean(args[2]);
 
 	if (strcmp(args[1], "wifi") == 0) {
 
-		if (num > 5)
+		if (num > 7)
 			return -E2BIG;
 
-		if (num == 5 && set_tethering == -1)
+		ssid = num > 3 ? args[3] : "";
+		passphrase = num > 4 ? args[4] : "";
+		frequency = num > 5 ? args[5] : "";
+		mode = num > 6 ? args[6] : "nat";
+
+		if (num == 7 && set_tethering == -1)
 			return -EINVAL;
 
 		if (num == 4)
 			set_tethering = -1;
 
 		if (num > 3)
-			return tether_set_ssid(ssid, passphrase, set_tethering);
+			return tether_set_ssid(ssid, passphrase, frequency,
+					mode, set_tethering);
 	}
 
 	if (num > 3)
@@ -2552,9 +2608,9 @@ static const struct {
 	  "Disables given technology or offline mode",
 	  lookup_technology_offline },
 	{ "tether", "<technology> on|off\n"
-	            "            wifi [on|off] <ssid> <passphrase> ",
-	                                  NULL,            cmd_tether,
-	  "Enable, disable tethering, set SSID and passphrase for wifi",
+	  "            wifi [on|off] <ssid> <passphrase> <frequency> <nat|bridged-ap|lone-ap>\n",
+	  NULL,            cmd_tether,
+	  "Enable, disable tethering, set SSID, passphrase, frequency (e.g. 2412) and mode for wifi",
 	  lookup_tether },
 	{ "services",     "[<service>]",  service_options, cmd_services,
 	  "Display services", lookup_service_arg },
