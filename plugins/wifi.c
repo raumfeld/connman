@@ -64,7 +64,7 @@
 #define FAVORITE_MAXIMUM_RETRIES 2
 
 #define BGSCAN_DEFAULT "simple:30:-45:300"
-#define AUTOSCAN_DEFAULT "exponential:3:300"
+#define AUTOSCAN_DEFAULT "exponential:30000:30000"
 
 #define P2P_FIND_TIMEOUT 30
 #define P2P_CONNECTION_TIMEOUT 100
@@ -161,6 +161,8 @@ bool wfd_service_registered = false;
 static void start_autoscan(struct connman_device *device);
 static int tech_set_tethering(struct connman_technology *technology,
 				const char *identifier, const char *passphrase,
+				const char *frequency,
+				enum tethering_mode tether_mode,
 				const char *bridge, bool enabled);
 
 static int p2p_tech_probe(struct connman_technology *technology)
@@ -1962,7 +1964,29 @@ static void system_killed(void)
 
 static int network_probe(struct connman_network *network)
 {
+	struct connman_device *device = connman_network_get_device(network);
+	struct wifi_data *wifi;
+	const char* interfaceName;
+
 	DBG("network %p", network);
+
+	wifi = connman_device_get_data(device);
+	if (!wifi)
+		return -EINVAL;
+
+	interfaceName = connman_device_get_string(device, "Interface");
+	if (g_strcmp0(interfaceName, "uap0") == 0) {
+		// NOTE: this check is just a workaround for the fact that
+		//       uap0 claims that it supports station mode, too.
+		DBG("%s is not a STATION interface", interfaceName);
+		return -EINVAL;
+	}
+
+	unsigned int mode = g_supplicant_interface_get_mode(wifi->interface);
+	if ((mode & G_SUPPLICANT_CAPABILITY_MODE_IBSS) == 0) {
+		DBG("%s does not support STATION mode", interfaceName);
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -2195,6 +2219,7 @@ static void interface_added(GSupplicantInterface *interface)
 {
 	const char *ifname = g_supplicant_interface_get_ifname(interface);
 	const char *driver = g_supplicant_interface_get_driver(interface);
+	unsigned int mode = g_supplicant_interface_get_mode(interface);
 	struct wifi_data *wifi;
 
 	wifi = g_supplicant_interface_get_data(interface);
@@ -2209,8 +2234,8 @@ static void interface_added(GSupplicantInterface *interface)
 		wifi->p2p_device = true;
 	}
 
-	DBG("ifname %s driver %s wifi %p tethering %d",
-			ifname, driver, wifi, wifi->tethering);
+	DBG("ifname %s driver %s wifi %p tethering %d mode 0x%x",
+			ifname, driver, wifi, wifi->tethering, mode);
 
 	if (!wifi->device) {
 		connman_error("WiFi device not set");
@@ -2614,6 +2639,8 @@ static void ap_create_fail(GSupplicantInterface *interface)
 		ret = tech_set_tethering(wifi->tethering_param->technology,
 				wifi->tethering_param->ssid->ssid,
 				wifi->tethering_param->ssid->passphrase,
+				"0",
+				TETHERING_MODE_NAT,
 				wifi->bridge, true);
 
 		if ((ret == -EOPNOTSUPP) && (wifi_technology)) {
@@ -2646,6 +2673,7 @@ static void network_added(GSupplicantNetwork *supplicant_network)
 	struct wifi_data *wifi;
 	const char *name, *identifier, *security, *group, *mode;
 	const unsigned char *ssid;
+	const unsigned char *bssid;
 	unsigned int ssid_len;
 	bool wps;
 	bool wps_pbc;
@@ -2675,6 +2703,7 @@ static void network_added(GSupplicantNetwork *supplicant_network)
 		return;
 
 	ssid = g_supplicant_network_get_ssid(supplicant_network, &ssid_len);
+	bssid = g_supplicant_network_get_bssid(supplicant_network);
 
 	network = connman_device_get_network(wifi->device, identifier);
 
@@ -2699,6 +2728,8 @@ static void network_added(GSupplicantNetwork *supplicant_network)
 
 	connman_network_set_blob(network, "WiFi.SSID",
 						ssid, ssid_len);
+	connman_network_set_blob(network, "WiFi.BSSID",
+						bssid, 6);
 	connman_network_set_string(network, "WiFi.Security", security);
 	connman_network_set_strength(network,
 				calculate_strength(supplicant_network));
@@ -3040,7 +3071,7 @@ static void tech_remove(struct connman_technology *technology)
 	wifi_technology = NULL;
 }
 
-static GSupplicantSSID *ssid_ap_init(const char *ssid, const char *passphrase)
+static GSupplicantSSID *ssid_ap_init(const char *ssid, const char *passphrase, const char *frequency)
 {
 	GSupplicantSSID *ap;
 
@@ -3052,7 +3083,7 @@ static GSupplicantSSID *ssid_ap_init(const char *ssid, const char *passphrase)
 	ap->ssid = ssid;
 	ap->ssid_len = strlen(ssid);
 	ap->scan_ssid = 0;
-	ap->freq = 2412;
+	ap->freq = frequency ? atoi(frequency) : 2412;
 
 	if (!passphrase || strlen(passphrase) == 0) {
 		ap->security = G_SUPPLICANT_SECURITY_NONE;
@@ -3164,7 +3195,8 @@ static void sta_remove_callback(int result,
 
 static int enable_wifi_tethering(struct connman_technology *technology,
 				const char *bridge, const char *identifier,
-				const char *passphrase, bool available)
+				const char *passphrase, const char *frequency,
+				enum tethering_mode tether_mode, bool available)
 {
 	GList *list;
 	GSupplicantInterface *interface;
@@ -3194,6 +3226,16 @@ static int enable_wifi_tethering(struct connman_technology *technology,
 			continue;
 		}
 
+		const char *tethering_interface =
+			connman_technology_get_tethering_interface(technology);
+		if (tethering_interface &&
+			g_strcmp0(tethering_interface, ifname) != 0) {
+			DBG("%s does not match explicitly set tethering interface %s",
+				ifname, tethering_interface);
+			continue;
+		}
+
+		DBG("using %s as wifi tethering device", ifname);
 		mode = g_supplicant_interface_get_mode(interface);
 		if ((mode & G_SUPPLICANT_CAPABILITY_MODE_AP) == 0) {
 			wifi->ap_supported = WIFI_AP_NOT_SUPPORTED;
@@ -3217,19 +3259,20 @@ static int enable_wifi_tethering(struct connman_technology *technology,
 		info->wifi = wifi;
 		info->technology = technology;
 		info->wifi->bridge = bridge;
-		info->ssid = ssid_ap_init(identifier, passphrase);
+		info->ssid = ssid_ap_init(identifier, passphrase, frequency);
 		if (!info->ssid)
 			goto failed;
-
 		info->ifname = g_strdup(ifname);
 
 		wifi->tethering_param->technology = technology;
-		wifi->tethering_param->ssid = ssid_ap_init(identifier, passphrase);
+		wifi->tethering_param->ssid = ssid_ap_init(identifier, passphrase,
+				frequency);
 		if (!wifi->tethering_param->ssid)
 			goto failed;
 
 		info->wifi->tethering = true;
 		info->wifi->ap_supported = WIFI_AP_SUPPORTED;
+		handle_tethering (wifi);
 
 		err = g_supplicant_interface_remove(interface,
 						sta_remove_callback,
@@ -3252,6 +3295,8 @@ static int enable_wifi_tethering(struct connman_technology *technology,
 
 static int tech_set_tethering(struct connman_technology *technology,
 				const char *identifier, const char *passphrase,
+				const char *frequency,
+				enum tethering_mode tether_mode,
 				const char *bridge, bool enabled)
 {
 	GList *list;
@@ -3267,9 +3312,11 @@ static int tech_set_tethering(struct connman_technology *technology,
 			if (wifi->tethering) {
 				wifi->tethering = false;
 
-				connman_inet_remove_from_bridge(wifi->index,
+				if (wifi->bridged) {
+					connman_inet_remove_from_bridge(wifi->index,
 									bridge);
-				wifi->bridged = false;
+					wifi->bridged = false;
+				}
 			}
 		}
 
@@ -3280,12 +3327,13 @@ static int tech_set_tethering(struct connman_technology *technology,
 
 	DBG("trying tethering for available devices");
 	err = enable_wifi_tethering(technology, bridge, identifier, passphrase,
-				true);
+				frequency, tether_mode, true);
 
 	if (err < 0) {
 		DBG("trying tethering for any device");
 		err = enable_wifi_tethering(technology, bridge, identifier,
-					passphrase, false);
+					passphrase, frequency, tether_mode,
+					false);
 	}
 
 	return err;

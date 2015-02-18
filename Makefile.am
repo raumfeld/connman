@@ -19,7 +19,7 @@ noinst_HEADERS = include/rtnl.h include/task.h \
 			include/dbus.h include/option.h \
 			include/provider.h include/vpn-dbus.h \
 			include/utsname.h include/timeserver.h include/proxy.h \
-			include/technology.h include/setting.h \
+			include/technology.h include/setting.h include/tethering.h \
 			include/backtrace.h
 
 local_headers = $(foreach file,$(include_HEADERS) $(nodist_include_HEADERS) \
