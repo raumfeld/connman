@@ -97,3 +97,31 @@ Properties	boolean Powered [readwrite]
 			This property is only valid for the WiFi technology,
 			and is then mapped to the WPA pre-shared key clients
 			will have to use in order to establish a connection.
+
+		string TetheringFrequency [readwrite]
+
+			The frequency to be used by the access point during
+			tethering.
+
+			This property is only valid for the WiFi technology,
+			and is then mapped to the WiFi frequency where the
+			access point will listen for clients.
+
+		boolean TetheringMode [readwrite]
+
+			This option allows to set the operation mode for
+			tethering. These modes are supported:
+			- 'nat' (default) implements full tethering mode, such
+			  that a DHCP-server is started for the WiFi interface
+			  and NAT is done between the WiFi network and the
+			  wired network. In this mode, WiFi stations have access
+			  to the internet through the access point.
+			- 'bridged-ap' simply bridges together the WiFi and the
+			  wired network, relying on a DHCP server running somewhere
+			  in the wired network.
+			- 'lone-ap' starts the WiFi network in access point mode,
+			  i.e. a DHCP-server is started for the WiFi interface,
+			  but there's no connection between the WiFi and the wired
+			  network. In this mode, WiFi stations can talk to the
+			  access point, but do not have access to the wired network
+			  (or the internet).
