@@ -2321,6 +2321,16 @@ static void append_properties(DBusMessageIter *dict, dbus_bool_t limited,
 						append_ethernet, service);
 		break;
 	case CONNMAN_SERVICE_TYPE_WIFI:
+	{
+		const unsigned char *bssid = connman_network_get_blob(service->network, "WiFi.BSSID", NULL);
+		uint16_t frequency = connman_network_get_frequency(service->network);
+		char* bssidString = g_strdup_printf("%02x:%02x:%02x:%02x:%02x:%02x", bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
+		connman_dbus_dict_append_basic(dict, "BSSID", DBUS_TYPE_STRING, &bssidString);
+		connman_dbus_dict_append_basic(dict, "Frequency", DBUS_TYPE_UINT16, &frequency);
+
+		g_free(bssidString);
+	}
+		/* fall through ... */
 	case CONNMAN_SERVICE_TYPE_ETHERNET:
 	case CONNMAN_SERVICE_TYPE_BLUETOOTH:
 	case CONNMAN_SERVICE_TYPE_GADGET:

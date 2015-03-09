@@ -2518,6 +2518,7 @@ static void network_added(GSupplicantNetwork *supplicant_network)
 	struct wifi_data *wifi;
 	const char *name, *identifier, *security, *group, *mode;
 	const unsigned char *ssid;
+	const unsigned char *bssid;
 	unsigned int ssid_len;
 	bool wps;
 	bool wps_pbc;
@@ -2547,6 +2548,7 @@ static void network_added(GSupplicantNetwork *supplicant_network)
 		return;
 
 	ssid = g_supplicant_network_get_ssid(supplicant_network, &ssid_len);
+	bssid = g_supplicant_network_get_bssid(supplicant_network);
 
 	network = connman_device_get_network(wifi->device, identifier);
 
@@ -2571,6 +2573,8 @@ static void network_added(GSupplicantNetwork *supplicant_network)
 
 	connman_network_set_blob(network, "WiFi.SSID",
 						ssid, ssid_len);
+	connman_network_set_blob(network, "WiFi.BSSID",
+						bssid, 6);
 	connman_network_set_string(network, "WiFi.Security", security);
 	connman_network_set_strength(network,
 				calculate_strength(supplicant_network));
