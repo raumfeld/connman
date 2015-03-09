@@ -89,6 +89,7 @@ struct connman_network {
 		bool wps;
 		bool use_wps;
 		char *pin_wps;
+		unsigned char bssid[6];
 	} wifi;
 
 };
@@ -1943,6 +1944,8 @@ int connman_network_set_blob(struct connman_network *network,
 			network->wifi.ssid_len = size;
 		} else
 			network->wifi.ssid_len = 0;
+	} else if (g_str_equal(key, "WiFi.BSSID") && size == 6) {
+		memcpy(network->wifi.bssid, data, size);
 	} else {
 		return -EINVAL;
 	}
@@ -1967,6 +1970,11 @@ const void *connman_network_get_blob(struct connman_network *network,
 		if (size)
 			*size = network->wifi.ssid_len;
 		return network->wifi.ssid;
+	}
+	else if (g_str_equal(key, "WiFi.BSSID")) {
+		if (size)
+			*size = 6;
+		return network->wifi.bssid;
 	}
 
 	return NULL;

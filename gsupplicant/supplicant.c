@@ -1146,6 +1146,14 @@ const char *g_supplicant_network_get_identifier(GSupplicantNetwork *network)
 	return network->group;
 }
 
+const unsigned char *g_supplicant_network_get_bssid (GSupplicantNetwork *network)
+{
+	if (!network || !network->best_bss)
+		return (unsigned char *)"";
+
+	return network->best_bss->bssid;
+}
+
 const char *g_supplicant_network_get_path(GSupplicantNetwork *network)
 {
 	if (!network || !network->path)
