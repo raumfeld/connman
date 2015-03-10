@@ -988,11 +988,6 @@ static DBusMessage *set_property(DBusConnection *conn,
 		if (technology->type != CONNMAN_SERVICE_TYPE_WIFI)
 			return __connman_error_not_supported(msg);
 
-		err = __connman_service_check_passphrase(CONNMAN_SERVICE_SECURITY_PSK,
-							str);
-		if (err < 0)
-			return __connman_error_passphrase_required(msg);
-
 		if (g_strcmp0(technology->tethering_passphrase, str) != 0) {
 			g_free(technology->tethering_passphrase);
 			technology->tethering_passphrase = g_strdup(str);
