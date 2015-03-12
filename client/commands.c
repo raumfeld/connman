@@ -520,6 +520,7 @@ struct tether_properties {
 	int passphrase_result;
 	int frequency_result;
 	int mode_result;
+	int interface_result;
 	int set_tethering;
 };
 
@@ -529,7 +530,8 @@ static int tether_update(struct tether_properties *tether)
 
 	if (tether->ssid_result == 0 && tether->passphrase_result == 0 &&
 			tether->frequency_result == 0 &&
-			tether->mode_result == 0) {
+			tether->mode_result == 0 &&
+			tether->interface_result == 0) {
 		ret = tether_set("wifi", tether->set_tethering);
 		g_free(tether);
 		return ret;
@@ -538,7 +540,8 @@ static int tether_update(struct tether_properties *tether)
 	if (tether->ssid_result != -EINPROGRESS &&
 			tether->passphrase_result != -EINPROGRESS &&
 			tether->frequency_result != -EINPROGRESS &&
-			tether->mode_result != -EINPROGRESS) {
+			tether->mode_result != -EINPROGRESS &&
+			tether->interface_result != -EINPROGRESS) {
 		g_free(tether);
 		return 0;
 	}
@@ -610,8 +613,24 @@ static int tether_set_mode_return(DBusMessageIter *iter,
 	return tether_update(tether);
 }
 
+static int tether_set_interface_return(DBusMessageIter *iter, const char *error,
+		void *user_data)
+{
+	struct tether_properties *tether = user_data;
+
+	if (!error) {
+		fprintf(stdout, "Wifi interface set\n");
+		tether->interface_result = 0;
+	} else {
+		fprintf(stderr, "Error setting wifi interface: %s\n", error);
+		tether->interface_result = -EINVAL;
+	}
+
+	return tether_update(tether);
+}
+
 static int tether_set_ssid(char *ssid, char *passphrase, char *frequency,
-		char *mode, int set_tethering)
+		char *mode, char *interface, int set_tethering)
 {
 	struct tether_properties *tether = g_new(struct tether_properties, 1);
 
@@ -641,10 +660,17 @@ static int tether_set_ssid(char *ssid, char *passphrase, char *frequency,
 			tether_set_mode_return, tether,
 			"TetheringMode", DBUS_TYPE_STRING, &mode);
 
+	tether->interface_result =__connmanctl_dbus_set_property(connection,
+			"/net/connman/technology/wifi",
+			"net.connman.Technology",
+			tether_set_interface_return, tether,
+			"TetheringInterface", DBUS_TYPE_STRING, &interface);
+
 	if (tether->ssid_result != -EINPROGRESS &&
 			tether->passphrase_result != -EINPROGRESS &&
 			tether->frequency_result != -EINPROGRESS &&
-			tether->mode_result != -EINPROGRESS) {
+			tether->mode_result != -EINPROGRESS  &&
+			tether->interface_result != -EINPROGRESS) {
 		g_free(tether);
 		return -ENXIO;
 	}
@@ -654,7 +680,7 @@ static int tether_set_ssid(char *ssid, char *passphrase, char *frequency,
 
 static int cmd_tether(char *args[], int num, struct connman_option *options)
 {
-	char *ssid, *passphrase, *frequency, *mode;
+	char *ssid, *passphrase, *frequency, *mode, *interface;
 	int set_tethering;
 
 	if (num < 3)
@@ -664,15 +690,16 @@ static int cmd_tether(char *args[], int num, struct connman_option *options)
 
 	if (strcmp(args[1], "wifi") == 0) {
 
-		if (num > 7)
+		if (num > 8)
 			return -E2BIG;
 
 		ssid = num > 3 ? args[3] : "";
 		passphrase = num > 4 ? args[4] : "";
 		frequency = num > 5 ? args[5] : "";
 		mode = num > 6 ? args[6] : "nat";
+		interface = num > 7 ? args[7] : "wlan0";
 
-		if (num == 7 && set_tethering == -1)
+		if (num == 8 && set_tethering == -1)
 			return -EINVAL;
 
 		if (num == 4)
@@ -680,7 +707,7 @@ static int cmd_tether(char *args[], int num, struct connman_option *options)
 
 		if (num > 3)
 			return tether_set_ssid(ssid, passphrase, frequency,
-					mode, set_tethering);
+					mode, interface, set_tethering);
 	}
 
 	if (num > 3)

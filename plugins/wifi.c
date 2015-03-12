@@ -3203,6 +3203,15 @@ static int enable_wifi_tethering(struct connman_technology *technology,
 			continue;
 		}
 
+		const char *tethering_interface =
+			connman_technology_get_tethering_interface(technology);
+		if (tethering_interface &&
+			g_strcmp0(tethering_interface, ifname) != 0) {
+			DBG("%s does not match explicitly set tethering interface %s",
+				ifname, tethering_interface);
+			continue;
+		}
+
 		mode = g_supplicant_interface_get_mode(interface);
 		if ((mode & G_SUPPLICANT_CAPABILITY_MODE_AP) == 0) {
 			wifi->ap_supported = WIFI_AP_NOT_SUPPORTED;
