@@ -52,6 +52,8 @@ bool connman_technology_get_wifi_tethering(const char **ssid,
 							const char **psk);
 bool connman_technology_is_tethering_allowed(enum connman_service_type type);
 
+const char *connman_technology_get_tethering_interface(struct connman_technology *technology);
+
 struct connman_technology_driver {
 	const char *name;
 	enum connman_service_type type;
