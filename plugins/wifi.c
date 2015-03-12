@@ -3027,6 +3027,14 @@ static int tech_set_tethering(struct connman_technology *technology,
 			continue;
 
 		ifname = g_supplicant_interface_get_ifname(wifi->interface);
+		const char *tethering_interface =
+			connman_technology_get_tethering_interface(technology);
+		if (tethering_interface &&
+			g_strcmp0(tethering_interface, ifname) != 0) {
+			DBG("%s does not match explicitly set tethering interface %s",
+				ifname, tethering_interface);
+			continue;
+		}
 
 		mode = g_supplicant_interface_get_mode(interface);
 		if ((mode & G_SUPPLICANT_CAPABILITY_MODE_AP) == 0) {
