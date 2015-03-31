@@ -1912,7 +1912,29 @@ static void system_killed(void)
 
 static int network_probe(struct connman_network *network)
 {
+	struct connman_device *device = connman_network_get_device(network);
+	struct wifi_data *wifi;
+	const char* interfaceName;
+
 	DBG("network %p", network);
+
+	wifi = connman_device_get_data(device);
+	if (!wifi)
+		return -EINVAL;
+
+	interfaceName = connman_device_get_string(device, "Interface");
+	if (g_strcmp0(interfaceName, "uap0") == 0) {
+		// NOTE: this check is just a workaround for the fact that
+		//       uap0 claims that it supports station mode, too.
+		DBG("%s is not a STATION interface", interfaceName);
+		return -EINVAL;
+	}
+
+	unsigned int mode = g_supplicant_interface_get_mode(wifi->interface);
+	if ((mode & G_SUPPLICANT_CAPABILITY_MODE_IBSS) == 0) {
+		DBG("%s does not support STATION mode", interfaceName);
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -2137,6 +2159,7 @@ static void interface_added(GSupplicantInterface *interface)
 {
 	const char *ifname = g_supplicant_interface_get_ifname(interface);
 	const char *driver = g_supplicant_interface_get_driver(interface);
+	unsigned int mode = g_supplicant_interface_get_mode(interface);
 	struct wifi_data *wifi;
 
 	wifi = g_supplicant_interface_get_data(interface);
@@ -2150,8 +2173,8 @@ static void interface_added(GSupplicantInterface *interface)
 		wifi->p2p_device = true;
 	}
 
-	DBG("ifname %s driver %s wifi %p tethering %d",
-			ifname, driver, wifi, wifi->tethering);
+	DBG("ifname %s driver %s wifi %p tethering %d mode 0x%x",
+			ifname, driver, wifi, wifi->tethering, mode);
 
 	if (!wifi->device) {
 		connman_error("WiFi device not set");
