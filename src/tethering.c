@@ -198,7 +198,6 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 	const char *start_ip;
 	const char *end_ip;
 	const char *dns;
-	const char *dhcp_interface;
 	unsigned char prefixlen;
 	char **ns;
 
@@ -213,12 +212,7 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 		return;
 	}
 
-	if (tether_mode == TETHERING_MODE_LONE_AP && ifname)
-		dhcp_interface = ifname;
-	else
-		dhcp_interface = BRIDGE_NAME;
-
-	index = connman_inet_ifindex(dhcp_interface);
+	index = connman_inet_ifindex(BRIDGE_NAME);
 
 	if (tether_mode == TETHERING_MODE_BRIDGED_AP) {
 		// TODO: implement!
@@ -243,7 +237,7 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 		end_ip = __connman_ippool_get_end_ip(dhcp_ippool);
 	}
 
-	err = __connman_bridge_enable(dhcp_interface, gateway,
+	err = __connman_bridge_enable(BRIDGE_NAME, gateway,
 			connman_ipaddress_calc_netmask_len(subnet_mask),
 			broadcast);
 	if (err < 0 && err != -EALREADY) {
@@ -277,12 +271,12 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 		DBG("Serving %s nameserver to clients", dns);
 	}
 
-	tethering_dhcp_server = dhcp_server_start(dhcp_interface,
+	tethering_dhcp_server = dhcp_server_start(BRIDGE_NAME,
 						gateway, subnet_mask,
 						start_ip, end_ip,
 						24 * 3600, dns);
 	if (!tethering_dhcp_server) {
-		__connman_bridge_disable(dhcp_interface);
+		__connman_bridge_disable(BRIDGE_NAME);
 		__connman_ippool_unref(dhcp_ippool);
 		__connman_bridge_remove(BRIDGE_NAME);
 		__sync_fetch_and_sub(&tethering_enabled, 1);
@@ -323,10 +317,7 @@ void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 
 	__connman_ipv6pd_cleanup();
 
-	if (tether_mode == TETHERING_MODE_LONE_AP)
-		index = connman_inet_ifindex("uap0");
-	else
-		index = connman_inet_ifindex(BRIDGE_NAME);
+	index = connman_inet_ifindex(BRIDGE_NAME);
 
 	__connman_dnsproxy_remove_listener(index);
 
@@ -567,6 +558,8 @@ int __connman_tethering_init(void)
 
 	pn_hash = g_hash_table_new_full(g_str_hash, g_str_equal,
 						NULL, remove_private_network);
+
+	__connman_bridge_create(BRIDGE_NAME);
 
 	return 0;
 }
