@@ -3235,6 +3235,7 @@ static int enable_wifi_tethering(struct connman_technology *technology,
 			continue;
 		}
 
+		DBG("using %s as wifi tethering device", ifname);
 		mode = g_supplicant_interface_get_mode(interface);
 		if ((mode & G_SUPPLICANT_CAPABILITY_MODE_AP) == 0) {
 			wifi->ap_supported = WIFI_AP_NOT_SUPPORTED;
