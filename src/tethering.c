@@ -192,14 +192,13 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 {
 	int index;
 	int err;
-	const char *gateway;
-	const char *broadcast;
-	const char *subnet_mask;
-	const char *start_ip;
-	const char *end_ip;
-	const char *dns;
-	unsigned char prefixlen;
-	char **ns;
+	const char *gateway = NULL;
+	const char *broadcast = NULL;
+	const char *subnet_mask = NULL;
+	const char *start_ip = NULL;
+	const char *end_ip = NULL;
+	const char *dns = NULL;
+	char **ns = NULL;
 
 	DBG("enabled %d", tethering_enabled + 1);
 
@@ -239,56 +238,61 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 			connman_ipaddress_calc_netmask_len(subnet_mask),
 			broadcast);
 	if (err < 0 && err != -EALREADY) {
-		__connman_ippool_unref(dhcp_ippool);
-		__sync_fetch_and_sub(&tethering_enabled, 1);
-		return;
-	}
-
-	ns = connman_setting_get_string_list("FallbackNameservers");
-	if (ns) {
-		if (ns[0]) {
-			g_free(private_network_primary_dns);
-			private_network_primary_dns = g_strdup(ns[0]);
-		}
-		if (ns[1]) {
-			g_free(private_network_secondary_dns);
-			private_network_secondary_dns = g_strdup(ns[1]);
-		}
-
-		DBG("Fallback ns primary %s secondary %s",
-			private_network_primary_dns,
-			private_network_secondary_dns);
-	}
-
-	dns = gateway;
-	if (__connman_dnsproxy_add_listener(index) < 0) {
-		connman_error("Can't add listener %s to DNS proxy",
-								BRIDGE_NAME);
-		dns = private_network_primary_dns;
-		DBG("Serving %s nameserver to clients", dns);
-	}
-
-	tethering_dhcp_server = dhcp_server_start(BRIDGE_NAME,
-						gateway, subnet_mask,
-						start_ip, end_ip,
-						24 * 3600, dns);
-	if (!tethering_dhcp_server) {
-		__connman_bridge_disable(BRIDGE_NAME);
-		__connman_ippool_unref(dhcp_ippool);
-		__sync_fetch_and_sub(&tethering_enabled, 1);
-		return;
-	}
-
-	if (tether_mode == TETHERING_MODE_NAT) {
-		prefixlen = connman_ipaddress_calc_netmask_len(subnet_mask);
-		err = __connman_nat_enable(BRIDGE_NAME, start_ip, prefixlen);
-		if (err < 0) {
-			connman_error("Cannot enable NAT %d/%s", err, strerror(-err));
-			dhcp_server_stop(tethering_dhcp_server);
-			__connman_bridge_disable(BRIDGE_NAME);
+		if (tether_mode != TETHERING_MODE_BRIDGED_AP)
 			__connman_ippool_unref(dhcp_ippool);
+		__sync_fetch_and_sub(&tethering_enabled, 1);
+		return;
+	}
+
+	if (tether_mode != TETHERING_MODE_BRIDGED_AP) {
+		ns = connman_setting_get_string_list("FallbackNameservers");
+		if (ns) {
+			if (ns[0]) {
+				g_free(private_network_primary_dns);
+				private_network_primary_dns = g_strdup(ns[0]);
+			}
+			if (ns[1]) {
+				g_free(private_network_secondary_dns);
+				private_network_secondary_dns = g_strdup(ns[1]);
+			}
+
+			DBG("Fallback ns primary %s secondary %s",
+				private_network_primary_dns,
+				private_network_secondary_dns);
+		}
+
+		dns = gateway;
+		if (__connman_dnsproxy_add_listener(index) < 0) {
+			connman_error("Can't add listener %s to DNS proxy",
+									BRIDGE_NAME);
+			dns = private_network_primary_dns;
+			DBG("Serving %s nameserver to clients", dns);
+		}
+
+		tethering_dhcp_server = dhcp_server_start(BRIDGE_NAME,
+							gateway, subnet_mask,
+							start_ip, end_ip,
+							24 * 3600, dns);
+		if (!tethering_dhcp_server) {
+			__connman_bridge_disable(BRIDGE_NAME);
+			if (tether_mode != TETHERING_MODE_BRIDGED_AP)
+				__connman_ippool_unref(dhcp_ippool);
 			__sync_fetch_and_sub(&tethering_enabled, 1);
 			return;
+		}
+
+		if (tether_mode == TETHERING_MODE_NAT) {
+			unsigned char prefixlen = connman_ipaddress_calc_netmask_len(subnet_mask);
+			err = __connman_nat_enable(BRIDGE_NAME, start_ip, prefixlen);
+			if (err < 0) {
+				connman_error("Cannot enable NAT %d/%s", err, strerror(-err));
+				dhcp_server_stop(tethering_dhcp_server);
+				__connman_bridge_disable(BRIDGE_NAME);
+				if (tether_mode != TETHERING_MODE_BRIDGED_AP)
+					__connman_ippool_unref(dhcp_ippool);
+				__sync_fetch_and_sub(&tethering_enabled, 1);
+				return;
+			}
 		}
 	}
 
@@ -314,25 +318,26 @@ void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 
 	index = connman_inet_ifindex(BRIDGE_NAME);
 
-	__connman_dnsproxy_remove_listener(index);
-
-	if (tether_mode == TETHERING_MODE_NAT)
-		__connman_nat_disable(BRIDGE_NAME);
-
-	if (tethering_dhcp_server) {
-		dhcp_server_stop(tethering_dhcp_server);
-		tethering_dhcp_server = NULL;
-	}
-
 	__connman_bridge_disable(BRIDGE_NAME);
 
-	if (tether_mode != TETHERING_MODE_BRIDGED_AP)
+	if (tether_mode != TETHERING_MODE_BRIDGED_AP) {
+		__connman_dnsproxy_remove_listener(index);
+
+		if (tether_mode == TETHERING_MODE_NAT)
+			__connman_nat_disable(BRIDGE_NAME);
+
+		if (tethering_dhcp_server) {
+			dhcp_server_stop(tethering_dhcp_server);
+			tethering_dhcp_server = NULL;
+		}
+
 		__connman_ippool_unref(dhcp_ippool);
 
-	g_free(private_network_primary_dns);
-	private_network_primary_dns = NULL;
-	g_free(private_network_secondary_dns);
-	private_network_secondary_dns = NULL;
+		g_free(private_network_primary_dns);
+		private_network_primary_dns = NULL;
+		g_free(private_network_secondary_dns);
+		private_network_secondary_dns = NULL;
+	}
 
 	DBG("tethering stopped");
 }
