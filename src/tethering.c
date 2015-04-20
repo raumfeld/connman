@@ -206,17 +206,16 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 	if (__sync_fetch_and_add(&tethering_enabled, 1) != 0)
 		return;
 
-	err = __connman_bridge_create(BRIDGE_NAME);
-	if (err < 0) {
+	index = connman_inet_ifindex(BRIDGE_NAME);
+	if (index < 0) {
+		connman_error("Failed to get index of bridge device %s!", BRIDGE_NAME);
 		__sync_fetch_and_sub(&tethering_enabled, 1);
 		return;
 	}
 
-	index = connman_inet_ifindex(BRIDGE_NAME);
-
 	if (tether_mode == TETHERING_MODE_BRIDGED_AP) {
 		// TODO: implement!
-		connman_error("bridged-ap mode is not implemented yet!\n");
+		connman_error("bridged-ap mode is not implemented yet!");
 		return;
 	} else {
 		g_restart_data.tether_mode = tether_mode;
@@ -224,8 +223,7 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 		dhcp_ippool = __connman_ippool_create(index, 2, 252,
 					tethering_restart, &g_restart_data);
 		if (!dhcp_ippool) {
-			connman_error("Fail to create IP pool");
-			__connman_bridge_remove(BRIDGE_NAME);
+			connman_error("Failed to create IP pool");
 			__sync_fetch_and_sub(&tethering_enabled, 1);
 			return;
 		}
@@ -242,7 +240,6 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 			broadcast);
 	if (err < 0 && err != -EALREADY) {
 		__connman_ippool_unref(dhcp_ippool);
-		__connman_bridge_remove(BRIDGE_NAME);
 		__sync_fetch_and_sub(&tethering_enabled, 1);
 		return;
 	}
@@ -278,7 +275,6 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 	if (!tethering_dhcp_server) {
 		__connman_bridge_disable(BRIDGE_NAME);
 		__connman_ippool_unref(dhcp_ippool);
-		__connman_bridge_remove(BRIDGE_NAME);
 		__sync_fetch_and_sub(&tethering_enabled, 1);
 		return;
 	}
@@ -291,7 +287,6 @@ void __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 			dhcp_server_stop(tethering_dhcp_server);
 			__connman_bridge_disable(BRIDGE_NAME);
 			__connman_ippool_unref(dhcp_ippool);
-			__connman_bridge_remove(BRIDGE_NAME);
 			__sync_fetch_and_sub(&tethering_enabled, 1);
 			return;
 		}
@@ -333,8 +328,6 @@ void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 
 	if (tether_mode != TETHERING_MODE_BRIDGED_AP)
 		__connman_ippool_unref(dhcp_ippool);
-
-	__connman_bridge_remove(BRIDGE_NAME);
 
 	g_free(private_network_primary_dns);
 	private_network_primary_dns = NULL;
