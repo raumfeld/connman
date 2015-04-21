@@ -264,15 +264,18 @@ void connman_technology_tethering_notify(struct connman_technology *technology,
 	if (technology->tethering == enabled)
 		return;
 
+	if (enabled) {
+		const char *ifname = technology->tethering_interface ? technology->tethering_interface : "wlan0";
+		if (!__connman_tethering_set_enabled(technology->tethering_mode, ifname)) {
+			DBG("enabling tethering for technology %s failed", technology->path);
+			enabled = false;
+		}
+	} else
+		__connman_tethering_set_disabled(technology->tethering_mode);
+
 	technology->tethering = enabled;
 
 	tethering_changed(technology);
-
-	if (enabled) {
-		const char *ifname = technology->tethering_interface ? technology->tethering_interface : "wlan0";
-		__connman_tethering_set_enabled(technology->tethering_mode, ifname);
-	} else
-		__connman_tethering_set_disabled(technology->tethering_mode);
 }
 
 static int set_tethering(struct connman_technology *technology,
