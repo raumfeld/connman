@@ -3272,6 +3272,7 @@ static int enable_wifi_tethering(struct connman_technology *technology,
 
 		info->wifi->tethering = true;
 		info->wifi->ap_supported = WIFI_AP_SUPPORTED;
+		handle_tethering (wifi);
 
 		err = g_supplicant_interface_remove(interface,
 						sta_remove_callback,
@@ -3311,9 +3312,11 @@ static int tech_set_tethering(struct connman_technology *technology,
 			if (wifi->tethering) {
 				wifi->tethering = false;
 
-				connman_inet_remove_from_bridge(wifi->index,
+				if (wifi->bridged) {
+					connman_inet_remove_from_bridge(wifi->index,
 									bridge);
-				wifi->bridged = false;
+					wifi->bridged = false;
+				}
 			}
 		}
 
