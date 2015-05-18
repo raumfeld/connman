@@ -211,7 +211,7 @@ bool __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 	bridge_index = connman_inet_ifindex(BRIDGE_NAME);
 	if (bridge_index < 0) {
 		connman_error("Failed to get index of bridge device %s (%s)!",
-			BRIDGE_NAME, strerror(-err));
+			BRIDGE_NAME, strerror(-bridge_index));
 		__sync_fetch_and_sub(&tethering_enabled, 1);
 		return FALSE;
 	}
