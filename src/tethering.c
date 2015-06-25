@@ -49,7 +49,8 @@
 #endif
 
 #define BRIDGE_NAME "tether"
-#define ETHERNET_NAME "eth0"
+#define ETHERNET_NAME_1 "eth0"
+#define ETHERNET_NAME_2 "eth1"
 
 #define DEFAULT_MTU	1500
 
@@ -189,6 +190,80 @@ static void tethering_restart(struct connman_ippool *pool, void *user_data)
 	__connman_tethering_set_enabled(data->tether_mode, data->ifname);
 }
 
+static void disable_bridge_if_ethernet_name_1 (const char *ethernet_name)
+{
+	if (strcmp (ethernet_name, ETHERNET_NAME_1) == 0)
+	{
+		__connman_bridge_disable(BRIDGE_NAME);
+		__sync_fetch_and_sub(&tethering_enabled, 1);
+	}
+}
+
+static bool put_ethernet_interface_into_bridge (int bridge_index,
+		const char* ethernet_name)
+{
+	int err = 0;
+
+	DBG("");
+	int ethernet_index = connman_inet_ifindex(ethernet_name);
+	if (ethernet_index < 0) {
+		connman_error("Failed to get index of ethernet device %s!",
+			ethernet_name);
+		disable_bridge_if_ethernet_name_1 (ethernet_name);
+		return FALSE;
+	}
+
+	struct connman_device *ethernet_device =
+		connman_device_find_by_index(ethernet_index);
+	if (!ethernet_device) {
+		connman_error("Failed to find ethernet device %s with index %d!",
+			ethernet_name, ethernet_index);
+		disable_bridge_if_ethernet_name_1 (ethernet_name);
+		return FALSE;
+	}
+
+	struct connman_service *ethernet_service =
+		__connman_service_lookup_from_index(ethernet_index);
+	if (!ethernet_service) {
+		connman_error("Failed to lookup service of ethernet device %s with index %d!",
+			ethernet_name, ethernet_index);
+		disable_bridge_if_ethernet_name_1 (ethernet_name);
+		return FALSE;
+	}
+
+	__connman_service_disconnect(ethernet_service);
+
+	err = connman_inet_add_to_bridge(ethernet_index, BRIDGE_NAME);
+	if (err < 0 && err != -EALREADY) {
+		connman_error("Failed to add ethernet interface %s to bridge %s (%s)!",
+			ethernet_name, BRIDGE_NAME, strerror(-err));
+		disable_bridge_if_ethernet_name_1 (ethernet_name);
+		return FALSE;
+	}
+
+	struct connman_network *ethernet_network =
+		__connman_service_get_network(ethernet_service);
+	if (!ethernet_network) {
+		connman_error("Failed to get network from ethernet service (%s)!", ethernet_name);
+		disable_bridge_if_ethernet_name_1 (ethernet_name);
+		return FALSE;
+	}
+
+	connman_network_set_index(ethernet_network, bridge_index);
+
+	err = __connman_service_connect(ethernet_service,
+		CONNMAN_SERVICE_CONNECT_REASON_AUTO);
+	if (err < 0) {
+		connman_error("Failed to connect service %s via bridge (%s)!",
+      __connman_service_get_name (ethernet_service), strerror(-err));
+		connman_inet_remove_from_bridge(ethernet_index, BRIDGE_NAME);
+		connman_network_set_index(ethernet_network, ethernet_index);
+		disable_bridge_if_ethernet_name_1 (ethernet_name);
+		return FALSE;
+	}
+	return TRUE;
+}
+
 bool __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char *ifname)
 {
 	int last_tethering_state;
@@ -247,65 +322,12 @@ bool __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 	}
 
 	if (tether_mode == TETHERING_MODE_BRIDGED_AP) {
-		int ethernet_index = connman_inet_ifindex(ETHERNET_NAME);
-		if (ethernet_index < 0) {
-			connman_error("Failed to get index of ethernet device %s (%s)!",
-				ETHERNET_NAME, strerror(-err));
-			__connman_bridge_disable(BRIDGE_NAME);
-			__sync_fetch_and_sub(&tethering_enabled, 1);
+		if (!put_ethernet_interface_into_bridge (bridge_index, ETHERNET_NAME_1))
 			return FALSE;
-		}
 
-		struct connman_device *ethernet_device =
-			connman_device_find_by_index(ethernet_index);
-		if (!ethernet_device) {
-			connman_error("Failed to find ethernet device with index %d!", ethernet_index);
-			__connman_bridge_disable(BRIDGE_NAME);
-			__sync_fetch_and_sub(&tethering_enabled, 1);
-			return FALSE;
-		}
-
-		struct connman_service *ethernet_service =
-			__connman_service_lookup_from_index(ethernet_index);
-		if (!ethernet_service) {
-			connman_error("Failed to lookup service of ethernet device with index %d!", ethernet_index);
-			__connman_bridge_disable(BRIDGE_NAME);
-			__sync_fetch_and_sub(&tethering_enabled, 1);
-			return FALSE;
-		}
-
-		__connman_service_disconnect(ethernet_service);
-
-		err = connman_inet_add_to_bridge(ethernet_index, BRIDGE_NAME);
-		if (err < 0 && err != -EALREADY) {
-			connman_error("Failed to add ethernet interface to bridge %s (%s)!",
-				BRIDGE_NAME, strerror(-err));
-			__connman_bridge_disable(BRIDGE_NAME);
-			__sync_fetch_and_sub(&tethering_enabled, 1);
-			return FALSE;
-		}
-
-		struct connman_network *ethernet_network =
-			__connman_service_get_network(ethernet_service);
-		if (!ethernet_network) {
-			connman_error("Failed to get network from ethernet service!");
-			__connman_bridge_disable(BRIDGE_NAME);
-			__sync_fetch_and_sub(&tethering_enabled, 1);
-			return FALSE;
-		}
-
-		connman_network_set_index(ethernet_network, bridge_index);
-
-		err = __connman_service_connect(ethernet_service,
-				CONNMAN_SERVICE_CONNECT_REASON_AUTO);
-		if (err < 0) {
-			connman_error("Failed to connect service %s via bridge (%s)!",
-				__connman_service_get_name (ethernet_service), strerror(-err));
-			connman_inet_remove_from_bridge(ethernet_index, BRIDGE_NAME);
-			connman_network_set_index(ethernet_network, ethernet_index);
-			__connman_bridge_disable(BRIDGE_NAME);
-			__sync_fetch_and_sub(&tethering_enabled, 1);
-			return FALSE;
+		if (!put_ethernet_interface_into_bridge (bridge_index, ETHERNET_NAME_2)) {
+			DBG("force putting eht1 into tether bridge!");
+			connman_inet_add_to_bridge (connman_inet_ifindex(ETHERNET_NAME_2), BRIDGE_NAME);
 		}
 	} else {
 		ns = connman_setting_get_string_list("FallbackNameservers");
@@ -385,25 +407,11 @@ void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 	bridge_index = connman_inet_ifindex(BRIDGE_NAME);
 
 	if (tether_mode == TETHERING_MODE_BRIDGED_AP) {
-		struct connman_service *ethernet_service =
-			__connman_service_lookup_from_index(bridge_index);
-		if (ethernet_service) {
-			__connman_service_disconnect(ethernet_service);
-			int ethernet_index = connman_inet_ifindex(ETHERNET_NAME);
-			connman_inet_remove_from_bridge(ethernet_index, BRIDGE_NAME);
-			struct connman_network *ethernet_network =
-				__connman_service_get_network(ethernet_service);
-			if (ethernet_network) {
-				connman_network_set_index(ethernet_network, ethernet_index);
-				connman_inet_ifup(ethernet_index);
-				__connman_service_connect(ethernet_service,
-					CONNMAN_SERVICE_CONNECT_REASON_AUTO);
-			}
-		}
-		else
-		{
-			connman_inet_remove_from_bridge (connman_inet_ifindex(ETHERNET_NAME), BRIDGE_NAME);
-		}
+		DBG("removing eth0 from bridge");
+		connman_inet_remove_from_bridge (connman_inet_ifindex(ETHERNET_NAME_1), BRIDGE_NAME);
+
+		DBG("removing eth1 from bridge");
+		connman_inet_remove_from_bridge (connman_inet_ifindex(ETHERNET_NAME_2), BRIDGE_NAME);
 	} else {
 		__connman_dnsproxy_remove_listener(bridge_index);
 
