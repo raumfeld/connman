@@ -47,6 +47,7 @@
 #include <connman/rtnl.h>
 #include <connman/log.h>
 #include <connman/setting.h>
+#include <connman/tethering.h>
 
 static bool eth_tethering = false;
 
@@ -134,7 +135,7 @@ static void add_network(struct connman_device *device,
 	if (!network)
 		return;
 
-	index = connman_device_get_index(device);
+	index = connman_tethering_get_target_index_for_device(device);
 	connman_network_set_index(network, index);
 	ifname = connman_inet_ifname(index);
 	if (!ifname)
