@@ -376,7 +376,7 @@ bool __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 
 void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 {
-	int bridge_index;
+	int bridge_index, ethernet_index;
 
 	DBG("enabled %d", tethering_enabled - 1);
 
@@ -386,23 +386,20 @@ void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 	__connman_ipv6pd_cleanup();
 
 	bridge_index = connman_inet_ifindex(BRIDGE_NAME);
+	ethernet_index = connman_inet_ifindex(ETHERNET_NAME);
 
 	if (tether_mode == TETHERING_MODE_BRIDGED_AP) {
 		struct connman_service *ethernet_service =
-			__connman_service_lookup_from_index(bridge_index);
-		if (ethernet_service) {
+			connman_service_lookup_from_interface(ETHERNET_NAME);
+		if (ethernet_service)
 			__connman_service_disconnect(ethernet_service);
-			int ethernet_index = connman_inet_ifindex(ETHERNET_NAME);
-			connman_inet_remove_from_bridge(ethernet_index, BRIDGE_NAME);
-			struct connman_network *ethernet_network =
-				__connman_service_get_network(ethernet_service);
-			if (ethernet_network) {
-				connman_network_set_index(ethernet_network, ethernet_index);
-				connman_inet_ifup(ethernet_index);
-				__connman_service_connect(ethernet_service,
-					CONNMAN_SERVICE_CONNECT_REASON_AUTO);
-			}
-		}
+		connman_inet_ifdown(ethernet_index);
+		connman_inet_remove_from_bridge(ethernet_index, BRIDGE_NAME);
+		struct connman_network *ethernet_network =
+			ethernet_service ? __connman_service_get_network(ethernet_service) : NULL;
+		if (ethernet_network)
+			connman_network_set_index(ethernet_network, ethernet_index);
+		connman_inet_ifup(ethernet_index);
 	} else {
 		__connman_dnsproxy_remove_listener(bridge_index);
 
