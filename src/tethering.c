@@ -62,6 +62,8 @@ static struct connman_ippool *dhcp_ippool = NULL;
 static DBusConnection *connection;
 static GHashTable *pn_hash;
 
+static enum tethering_mode current_tethering_mode;
+
 struct connman_private_network {
 	char *owner;
 	char *path;
@@ -367,6 +369,7 @@ bool __connman_tethering_set_enabled(enum tethering_mode tether_mode, const char
 			strerror(-err));
 	}
 
+	current_tethering_mode = tether_mode;
 	DBG("tethering started");
 	return TRUE;
 }
@@ -421,6 +424,7 @@ void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 
 	__connman_bridge_disable(BRIDGE_NAME);
 
+	current_tethering_mode = 0;
 	DBG("tethering stopped");
 }
 
@@ -662,4 +666,17 @@ void __connman_tethering_cleanup(void)
 
 	g_hash_table_destroy(pn_hash);
 	dbus_connection_unref(connection);
+}
+
+int connman_tethering_get_target_index_for_device(struct connman_device *device)
+{
+	DBG("device=%s", connman_device_get_string(device, "Interface"));
+
+	// In bridged-ap mode, we need to return the index of the bridge device,
+	// such that the caller will setup the network to talk to the bridge
+	// device (tether) instead of the actual ethernet device (eth0 or eth1).
+	if (current_tethering_mode == TETHERING_MODE_BRIDGED_AP)
+		return connman_inet_ifindex(BRIDGE_NAME);
+
+	return connman_device_get_index(device);
 }
