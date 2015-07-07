@@ -6494,6 +6494,27 @@ struct connman_service *__connman_service_lookup_from_index(int index)
 	return NULL;
 }
 
+struct connman_service *connman_service_lookup_from_interface(const char *interface)
+{
+	GList *list;
+
+	for (list = service_list; list; list = list->next) {
+		struct connman_service *service = list->data;
+
+		if (!service->network)
+			continue;
+
+		struct connman_device *device = connman_network_get_device(service->network);
+		if (!device)
+			continue;
+
+		if (g_strcmp0(connman_device_get_string(device, "Interface"), interface) == 0)
+			return service;
+	}
+
+	return NULL;
+}
+
 struct connman_service *__connman_service_lookup_from_ident(const char *identifier)
 {
 	return lookup_by_identifier(identifier);
