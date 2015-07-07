@@ -400,10 +400,6 @@ void __connman_tethering_set_disabled(enum tethering_mode tether_mode)
 					CONNMAN_SERVICE_CONNECT_REASON_AUTO);
 			}
 		}
-		else
-		{
-			connman_inet_remove_from_bridge (connman_inet_ifindex(ETHERNET_NAME), BRIDGE_NAME);
-		}
 	} else {
 		__connman_dnsproxy_remove_listener(bridge_index);
 
