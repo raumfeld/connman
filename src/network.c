@@ -612,6 +612,7 @@ static void set_disconnected(struct connman_network *network)
 	struct connman_service *service;
 
 	service = connman_service_lookup_from_network(network);
+	connman_service_ref(service);
 
 	ipconfig_ipv4 = __connman_service_get_ip4config(service);
 	ipconfig_ipv6 = __connman_service_get_ip6config(service);
@@ -710,6 +711,8 @@ static void set_disconnected(struct connman_network *network)
 	network->connected = false;
 
 	connman_network_set_associating(network, false);
+
+	connman_service_unref(service);
 }
 
 
