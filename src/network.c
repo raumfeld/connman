@@ -58,6 +58,7 @@ struct connman_network {
 	char *group;
 	char *path;
 	int index;
+	int original_index;
 	int router_solicit_count;
 	int router_solicit_refresh_count;
 
@@ -458,7 +459,7 @@ static void check_dhcpv6(struct nd_router_advert *reply,
 	 */
 	service = connman_service_lookup_from_network(network);
 	if (service) {
-		connman_service_create_ip6config(service, network->index);
+		connman_service_create_ip6config(service, network->index, network->original_index);
 
 		connman_network_set_associating(network, false);
 
@@ -1067,7 +1068,83 @@ void connman_network_set_index(struct connman_network *network, int index)
 	}
 
 done:
+	network->original_index = network->index = index;
+}
+
+/**
+ * connman_network_divert_index:
+ * @network: network structure
+ * @index: index number
+ *
+ * Divert network to a different network device (a bridge).
+ */
+void connman_network_divert_index(struct connman_network *network, int index)
+{
+	struct connman_service *service;
+	struct connman_ipconfig *ipconfig;
+
+	DBG("network %p is diverting from index %d to %d", network, network->index, index);
+
+	service = connman_service_lookup_from_network(network);
+	if (!service)
+		goto done;
+
+	ipconfig = __connman_service_get_ip4config(service);
+	if (ipconfig) {
+		__connman_ipconfig_divert_index(ipconfig, index);
+
+		DBG("index %d service %p ip4config %p", network->index,
+			service, ipconfig);
+	}
+
+	ipconfig = __connman_service_get_ip6config(service);
+	if (ipconfig) {
+		__connman_ipconfig_divert_index(ipconfig, index);
+
+		DBG("index %d service %p ip6config %p", network->index,
+			service, ipconfig);
+	}
+
+done:
 	network->index = index;
+}
+
+/**
+ * connman_network_reset_index:
+ * @network: network structure
+ * @index: index number
+ *
+ * Undo a diversion of a network to a different network device (a bridge).
+ */
+void connman_network_reset_index(struct connman_network *network)
+{
+	struct connman_service *service;
+	struct connman_ipconfig *ipconfig;
+
+	DBG("network %p is unwiring diversion from index %d back to %d", network, network->index, network->original_index);
+
+	service = connman_service_lookup_from_network(network);
+	if (!service)
+		goto done;
+
+	ipconfig = __connman_service_get_ip4config(service);
+	if (ipconfig) {
+		__connman_ipconfig_reset_index(ipconfig);
+
+		DBG("index %d service %p ip4config %p", network->index,
+			service, ipconfig);
+	}
+
+	ipconfig = __connman_service_get_ip6config(service);
+	if (ipconfig) {
+		__connman_ipconfig_reset_index(ipconfig);
+
+		DBG("index %d service %p ip6config %p", network->index,
+			service, ipconfig);
+	}
+
+done:
+	network->index = network->original_index;
 }
 
 /**
@@ -1079,6 +1156,17 @@ done:
 int connman_network_get_index(struct connman_network *network)
 {
 	return network->index;
+}
+
+/**
+ * connman_network_get_original_index:
+ * @network: network structure
+ *
+ * Get original index number of network
+ */
+int connman_network_get_original_index(struct connman_network *network)
+{
+	return network->original_index;
 }
 
 /**

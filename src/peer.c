@@ -1048,7 +1048,7 @@ static struct connman_ipconfig *create_ipconfig(int index, void *user_data)
 {
 	struct connman_ipconfig *ipconfig;
 
-	ipconfig = __connman_ipconfig_create(index,
+	ipconfig = __connman_ipconfig_create(index, index,
 						CONNMAN_IPCONFIG_TYPE_IPV4);
 	if (!ipconfig)
 		return NULL;

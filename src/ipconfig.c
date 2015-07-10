@@ -43,6 +43,7 @@
 struct connman_ipconfig {
 	int refcount;
 	int index;
+	int original_index;
 	enum connman_ipconfig_type type;
 
 	const struct connman_ipconfig_ops *ops;
@@ -609,7 +610,7 @@ void __connman_ipconfig_dellink(int index, struct rtnl_link_stats *stats)
 		if (index != ipconfig->index)
 			continue;
 
-		ipconfig->index = -1;
+		ipconfig->original_index = ipconfig->index = -1;
 
 		if (!ipconfig->ops)
 			continue;
@@ -998,7 +999,17 @@ const char *__connman_ipconfig_get_gateway_from_index(int index,
 
 void __connman_ipconfig_set_index(struct connman_ipconfig *ipconfig, int index)
 {
+	ipconfig->original_index = ipconfig->index = index;
+}
+
+void __connman_ipconfig_divert_index(struct connman_ipconfig *ipconfig, int index)
+{
 	ipconfig->index = index;
+}
+
+void __connman_ipconfig_reset_index(struct connman_ipconfig *ipconfig)
+{
+	ipconfig->index = ipconfig->original_index;
 }
 
 const char *__connman_ipconfig_get_local(struct connman_ipconfig *ipconfig)
@@ -1128,7 +1139,7 @@ void __connman_ipconfig_set_prefixlen(struct connman_ipconfig *ipconfig,
 	ipconfig->address->prefixlen = prefixlen;
 }
 
-static struct connman_ipconfig *create_ipv6config(int index)
+static struct connman_ipconfig *create_ipv6config(int index, int original_index)
 {
 	struct connman_ipconfig *ipv6config;
 	struct connman_ipdevice *ipdevice;
@@ -1142,6 +1153,7 @@ static struct connman_ipconfig *create_ipv6config(int index)
 	ipv6config->refcount = 1;
 
 	ipv6config->index = index;
+	ipv6config->original_index = original_index;
 	ipv6config->enabled = false;
 	ipv6config->type = CONNMAN_IPCONFIG_TYPE_IPV6;
 
@@ -1175,15 +1187,15 @@ static struct connman_ipconfig *create_ipv6config(int index)
  *
  * Returns: a newly-allocated #connman_ipconfig structure
  */
-struct connman_ipconfig *__connman_ipconfig_create(int index,
+struct connman_ipconfig *__connman_ipconfig_create(int index, int original_index,
 					enum connman_ipconfig_type type)
 {
 	struct connman_ipconfig *ipconfig;
 
 	if (type == CONNMAN_IPCONFIG_TYPE_IPV6)
-		return create_ipv6config(index);
+		return create_ipv6config(index, original_index);
 
-	DBG("index %d", index);
+	DBG("index %d original_index %d", index, original_index);
 
 	ipconfig = g_try_new0(struct connman_ipconfig, 1);
 	if (!ipconfig)
@@ -1192,6 +1204,7 @@ struct connman_ipconfig *__connman_ipconfig_create(int index,
 	ipconfig->refcount = 1;
 
 	ipconfig->index = index;
+	ipconfig->original_index = original_index;
 	ipconfig->enabled = false;
 	ipconfig->type = CONNMAN_IPCONFIG_TYPE_IPV4;
 
@@ -1295,6 +1308,20 @@ int __connman_ipconfig_get_index(struct connman_ipconfig *ipconfig)
 		return -1;
 
 	return ipconfig->index;
+}
+
+/**
+ * connman_ipconfig_get_original_index:
+ * @ipconfig: ipconfig structure
+ *
+ * Get original interface index
+ */
+int __connman_ipconfig_get_original_index(struct connman_ipconfig *ipconfig)
+{
+	if (!ipconfig)
+		return -1;
+
+	return ipconfig->original_index;
 }
 
 /**
@@ -1814,6 +1841,8 @@ void __connman_ipconfig_append_ipv4(struct connman_ipconfig *ipconfig,
 
 	connman_dbus_dict_append_basic(iter, "Method", DBUS_TYPE_STRING, &str);
 
+	struct connman_ipdevice *ipdevice = g_hash_table_lookup(ipdevice_hash, GINT_TO_POINTER(ipconfig->index));
+
 	switch (ipconfig->method) {
 	case CONNMAN_IPCONFIG_METHOD_UNKNOWN:
 	case CONNMAN_IPCONFIG_METHOD_OFF:
@@ -1822,11 +1851,19 @@ void __connman_ipconfig_append_ipv4(struct connman_ipconfig *ipconfig,
 
 	case CONNMAN_IPCONFIG_METHOD_FIXED:
 		append_addr = ipconfig->address;
+		if (!append_addr || !append_addr->local) {
+			if (ipdevice && ipdevice->config_ipv4)
+				append_addr = ipdevice->config_ipv4->address;
+		}
 		break;
 
 	case CONNMAN_IPCONFIG_METHOD_MANUAL:
 	case CONNMAN_IPCONFIG_METHOD_DHCP:
 		append_addr = ipconfig->system;
+		if (!append_addr || !append_addr->local) {
+			if (ipdevice && ipdevice->config_ipv4)
+				append_addr = ipdevice->config_ipv4->system;
+		}
 		break;
 	}
 
@@ -1877,6 +1914,8 @@ void __connman_ipconfig_append_ipv6(struct connman_ipconfig *ipconfig,
 
 	connman_dbus_dict_append_basic(iter, "Method", DBUS_TYPE_STRING, &str);
 
+	struct connman_ipdevice *ipdevice = g_hash_table_lookup(ipdevice_hash, GINT_TO_POINTER(ipconfig->index));
+
 	switch (ipconfig->method) {
 	case CONNMAN_IPCONFIG_METHOD_UNKNOWN:
 	case CONNMAN_IPCONFIG_METHOD_OFF:
@@ -1884,12 +1923,20 @@ void __connman_ipconfig_append_ipv6(struct connman_ipconfig *ipconfig,
 
 	case CONNMAN_IPCONFIG_METHOD_FIXED:
 		append_addr = ipconfig->address;
+		if (!append_addr || !append_addr->local) {
+			if (ipdevice && ipdevice->config_ipv6)
+				append_addr = ipdevice->config_ipv6->address;
+		}
 		break;
 
 	case CONNMAN_IPCONFIG_METHOD_MANUAL:
 	case CONNMAN_IPCONFIG_METHOD_DHCP:
 	case CONNMAN_IPCONFIG_METHOD_AUTO:
 		append_addr = ipconfig->system;
+		if (!append_addr || !append_addr->local) {
+			if (ipdevice && ipdevice->config_ipv6)
+				append_addr = ipdevice->config_ipv6->system;
+		}
 		break;
 	}
 
@@ -2165,12 +2212,12 @@ void __connman_ipconfig_append_ethernet(struct connman_ipconfig *ipconfig,
 						DBUS_TYPE_STRING, &method);
 
 	ipdevice = g_hash_table_lookup(ipdevice_hash,
-					GINT_TO_POINTER(ipconfig->index));
+					GINT_TO_POINTER(ipconfig->original_index));
 	if (!ipdevice)
 		return;
 
 	if (ipconfig->index >= 0) {
-		char *ifname = connman_inet_ifname(ipconfig->index);
+		char *ifname = connman_inet_ifname(ipconfig->original_index);
 		if (ifname) {
 			connman_dbus_dict_append_basic(iter, "Interface",
 						DBUS_TYPE_STRING, &ifname);

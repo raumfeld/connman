@@ -132,9 +132,9 @@ struct connman_service *connman_service_lookup_from_network(struct connman_netwo
 struct connman_service *connman_service_lookup_from_interface(const char *interface);
 
 void connman_service_create_ip4config(struct connman_service *service,
-								int index);
+								int index, int original_index);
 void connman_service_create_ip6config(struct connman_service *service,
-								int index);
+								int index, int original_index);
 
 #ifdef __cplusplus
 }

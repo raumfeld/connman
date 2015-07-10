@@ -129,9 +129,9 @@ struct connman_service {
 static bool allow_property_changed(struct connman_service *service);
 
 static struct connman_ipconfig *create_ip4config(struct connman_service *service,
-		int index, enum connman_ipconfig_method method);
+		int index, int original_index, enum connman_ipconfig_method method);
 static struct connman_ipconfig *create_ip6config(struct connman_service *service,
-		int index);
+		int index, int original_index);
 
 
 struct find_data {
@@ -3098,7 +3098,7 @@ int __connman_service_reset_ipconfig(struct connman_service *service,
 	struct connman_ipconfig *ipconfig, *new_ipconfig;
 	enum connman_ipconfig_method old_method, new_method;
 	enum connman_service_state state;
-	int err = 0, index;
+	int err = 0, index, original_index;
 
 	if (type == CONNMAN_IPCONFIG_TYPE_IPV4) {
 		ipconfig = service->ipconfig_ipv4;
@@ -3116,12 +3116,13 @@ int __connman_service_reset_ipconfig(struct connman_service *service,
 
 	old_method = __connman_ipconfig_get_method(ipconfig);
 	index = __connman_ipconfig_get_index(ipconfig);
+	original_index = __connman_ipconfig_get_original_index(ipconfig);
 
 	if (type == CONNMAN_IPCONFIG_TYPE_IPV4)
-		new_ipconfig = create_ip4config(service, index,
+		new_ipconfig = create_ip4config(service, index, original_index,
 				CONNMAN_IPCONFIG_METHOD_UNKNOWN);
 	else
-		new_ipconfig = create_ip6config(service, index);
+		new_ipconfig = create_ip6config(service, index, original_index);
 
 	if (array) {
 		err = __connman_ipconfig_set_config(new_ipconfig, array);
@@ -6348,11 +6349,11 @@ static const struct connman_ipconfig_ops service_ops = {
 };
 
 static struct connman_ipconfig *create_ip4config(struct connman_service *service,
-		int index, enum connman_ipconfig_method method)
+		int index, int original_index, enum connman_ipconfig_method method)
 {
 	struct connman_ipconfig *ipconfig_ipv4;
 
-	ipconfig_ipv4 = __connman_ipconfig_create(index,
+	ipconfig_ipv4 = __connman_ipconfig_create(index, original_index,
 						CONNMAN_IPCONFIG_TYPE_IPV4);
 	if (!ipconfig_ipv4)
 		return NULL;
@@ -6367,11 +6368,11 @@ static struct connman_ipconfig *create_ip4config(struct connman_service *service
 }
 
 static struct connman_ipconfig *create_ip6config(struct connman_service *service,
-		int index)
+		int index, int original_index)
 {
 	struct connman_ipconfig *ipconfig_ipv6;
 
-	ipconfig_ipv6 = __connman_ipconfig_create(index,
+	ipconfig_ipv6 = __connman_ipconfig_create(index, original_index,
 						CONNMAN_IPCONFIG_TYPE_IPV6);
 	if (!ipconfig_ipv6)
 		return NULL;
@@ -6401,14 +6402,14 @@ void __connman_service_read_ip4config(struct connman_service *service)
 }
 
 void connman_service_create_ip4config(struct connman_service *service,
-					int index)
+					int index, int original_index)
 {
 	DBG("ipv4 %p", service->ipconfig_ipv4);
 
 	if (service->ipconfig_ipv4)
 		return;
 
-	service->ipconfig_ipv4 = create_ip4config(service, index,
+	service->ipconfig_ipv4 = create_ip4config(service, index, original_index,
 			CONNMAN_IPCONFIG_METHOD_DHCP);
 	__connman_service_read_ip4config(service);
 }
@@ -6431,14 +6432,14 @@ void __connman_service_read_ip6config(struct connman_service *service)
 }
 
 void connman_service_create_ip6config(struct connman_service *service,
-								int index)
+								int index, int original_index)
 {
 	DBG("ipv6 %p", service->ipconfig_ipv6);
 
 	if (service->ipconfig_ipv6)
 		return;
 
-	service->ipconfig_ipv6 = create_ip6config(service, index);
+	service->ipconfig_ipv6 = create_ip6config(service, index, original_index);
 
 	__connman_service_read_ip6config(service);
 }
@@ -6685,7 +6686,7 @@ struct connman_service * __connman_service_create_from_network(struct connman_ne
 	const char *ident, *group;
 	char *name;
 	unsigned int *auto_connect_types;
-	int i, index;
+	int i, index, original_index;
 
 	DBG("network %p", network);
 
@@ -6751,13 +6752,14 @@ struct connman_service * __connman_service_create_from_network(struct connman_ne
 	update_from_network(service, network);
 
 	index = connman_network_get_index(network);
+	original_index = connman_network_get_original_index(network);
 
 	if (!service->ipconfig_ipv4)
-		service->ipconfig_ipv4 = create_ip4config(service, index,
+		service->ipconfig_ipv4 = create_ip4config(service, index, original_index,
 				CONNMAN_IPCONFIG_METHOD_DHCP);
 
 	if (!service->ipconfig_ipv6)
-		service->ipconfig_ipv6 = create_ip6config(service, index);
+		service->ipconfig_ipv6 = create_ip6config(service, index, original_index);
 
 	service_register(service);
 
@@ -6927,11 +6929,11 @@ __connman_service_create_from_provider(struct connman_provider *provider)
 	service->strength = 0;
 
 	if (!service->ipconfig_ipv4)
-		service->ipconfig_ipv4 = create_ip4config(service, index,
+		service->ipconfig_ipv4 = create_ip4config(service, index, index,
 				CONNMAN_IPCONFIG_METHOD_MANUAL);
 
 	if (!service->ipconfig_ipv6)
-		service->ipconfig_ipv6 = create_ip6config(service, index);
+		service->ipconfig_ipv6 = create_ip6config(service, index, index);
 
 	service_register(service);
 

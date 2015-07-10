@@ -218,7 +218,7 @@ static bool put_ethernet_interface_into_bridge (const char *ethernet_name,
 			connman_inet_ifup(ethernet_index);
 			return FALSE;
 		}
-		connman_network_set_index(ethernet_network, bridge_index);
+		connman_network_divert_index(ethernet_network, bridge_index);
 	}
 	connman_inet_ifup(ethernet_index);
 
@@ -245,7 +245,7 @@ static bool pull_ethernet_interface_out_of_bridge (const char *ethernet_name,
 	}
 	struct connman_network *ethernet_network = ethernet_service ? __connman_service_get_network(ethernet_service) : NULL;
 	if (ethernet_network)
-		connman_network_set_index(ethernet_network, ethernet_index);
+		connman_network_reset_index(ethernet_network);
 	connman_inet_ifup(ethernet_index);
 
 	return TRUE;
