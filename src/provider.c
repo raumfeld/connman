@@ -485,7 +485,7 @@ void connman_provider_set_index(struct connman_provider *provider, int index)
 	ipconfig = __connman_service_get_ip4config(service);
 
 	if (!ipconfig) {
-		connman_service_create_ip4config(service, index);
+		connman_service_create_ip4config(service, index, index);
 
 		ipconfig = __connman_service_get_ip4config(service);
 		if (!ipconfig) {
@@ -500,7 +500,7 @@ void connman_provider_set_index(struct connman_provider *provider, int index)
 	ipconfig = __connman_service_get_ip6config(service);
 
 	if (!ipconfig) {
-		connman_service_create_ip6config(service, index);
+		connman_service_create_ip6config(service, index, index);
 
 		ipconfig = __connman_service_get_ip6config(service);
 		if (!ipconfig) {

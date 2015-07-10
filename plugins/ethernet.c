@@ -170,7 +170,7 @@ static void add_network(struct connman_device *device,
 			struct ethernet_data *ethernet)
 {
 	struct connman_network *network;
-	int index;
+	int original_index, index, vid;
 	char *ifname;
 
 	network = connman_network_create("carrier",
@@ -178,8 +178,11 @@ static void add_network(struct connman_device *device,
 	if (!network)
 		return;
 
+	original_index = connman_device_get_index(device);
 	index = connman_tethering_get_target_index_for_device(device);
-	connman_network_set_index(network, index);
+	connman_network_set_index(network, original_index);
+	if (original_index != index)
+		connman_network_divert_index(network, index);
 	ifname = connman_inet_ifname(index);
 	if (!ifname)
 		return;

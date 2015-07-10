@@ -304,7 +304,7 @@ struct connman_ipconfig_ops {
 	void (*route_unset) (struct connman_ipconfig *ipconfig, const char *ifname);
 };
 
-struct connman_ipconfig *__connman_ipconfig_create(int index,
+struct connman_ipconfig *__connman_ipconfig_create(int index, int original_index,
 					enum connman_ipconfig_type type);
 
 #define __connman_ipconfig_ref(ipconfig) \
@@ -323,6 +323,7 @@ void *__connman_ipconfig_get_data(struct connman_ipconfig *ipconfig);
 void __connman_ipconfig_set_data(struct connman_ipconfig *ipconfig, void *data);
 
 int __connman_ipconfig_get_index(struct connman_ipconfig *ipconfig);
+int __connman_ipconfig_get_original_index(struct connman_ipconfig *ipconfig);
 
 void __connman_ipconfig_set_ops(struct connman_ipconfig *ipconfig,
 				const struct connman_ipconfig_ops *ops);
@@ -359,6 +360,8 @@ unsigned int __connman_ipconfig_get_flags_from_index(int index);
 const char *__connman_ipconfig_get_gateway_from_index(int index,
 	enum connman_ipconfig_type type);
 void __connman_ipconfig_set_index(struct connman_ipconfig *ipconfig, int index);
+void __connman_ipconfig_divert_index(struct connman_ipconfig *ipconfig, int index);
+void __connman_ipconfig_reset_index(struct connman_ipconfig *ipconfig);
 
 const char *__connman_ipconfig_get_local(struct connman_ipconfig *ipconfig);
 void __connman_ipconfig_set_local(struct connman_ipconfig *ipconfig, const char *address);
