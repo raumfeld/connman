@@ -277,7 +277,7 @@ static void set_connected(struct modem_data *modem)
 	if (!service)
 		return;
 
-	connman_service_create_ip4config(service, index);
+	connman_service_create_ip4config(service, index, index);
 	connman_network_set_ipv4_method(modem->network, method);
 
 	if (method == CONNMAN_IPCONFIG_METHOD_FIXED ||
@@ -291,7 +291,7 @@ static void set_connected(struct modem_data *modem)
 	}
 
 	method = modem->context->ipv6_method;
-	connman_service_create_ip6config(service, index);
+	connman_service_create_ip6config(service, index, index);
 	connman_network_set_ipv6_method(modem->network, method);
 
 	if (method == CONNMAN_IPCONFIG_METHOD_AUTO) {
