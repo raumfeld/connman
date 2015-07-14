@@ -457,6 +457,7 @@ static gchar *option_noplugin = NULL;
 static gchar *option_wifi = NULL;
 static gboolean option_detach = TRUE;
 static gboolean option_dnsproxy = TRUE;
+static gboolean option_ntp = TRUE;
 static gboolean option_backtrace = TRUE;
 static gboolean option_version = FALSE;
 
@@ -494,6 +495,9 @@ static GOptionEntry options[] = {
 	{ "nodnsproxy", 'r', G_OPTION_FLAG_REVERSE,
 				G_OPTION_ARG_NONE, &option_dnsproxy,
 				"Don't enable DNS Proxy" },
+	{ "nontp", 0, G_OPTION_FLAG_REVERSE,
+				G_OPTION_ARG_NONE, &option_ntp,
+				"Don't enable NTP support" },
 	{ "nobacktrace", 0, G_OPTION_FLAG_REVERSE,
 				G_OPTION_ARG_NONE, &option_backtrace,
 				"Don't print out backtrace information" },
@@ -669,7 +673,7 @@ int main(int argc, char *argv[])
 	__connman_proxy_init();
 	__connman_detect_init();
 	__connman_session_init();
-	__connman_timeserver_init();
+	__connman_timeserver_init(option_ntp);
 	__connman_connection_init();
 
 	__connman_plugin_init(option_plugin, option_noplugin);
@@ -701,7 +705,7 @@ int main(int argc, char *argv[])
 	__connman_plugin_cleanup();
 	__connman_provider_cleanup();
 	__connman_connection_cleanup();
-	__connman_timeserver_cleanup();
+	__connman_timeserver_cleanup(option_ntp);
 	__connman_detect_cleanup();
 	__connman_proxy_cleanup();
 	__connman_task_cleanup();

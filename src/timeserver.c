@@ -34,6 +34,8 @@
 
 #define TS_RECHECK_INTERVAL     7200
 
+static bool ntp_enabled = false;
+
 static GSList *ts_list = NULL;
 static char *ts_current = NULL;
 static int ts_recheck_id = 0;
@@ -122,6 +124,9 @@ static void resolv_result(GResolvResultStatus status, char **results,
  */
 void __connman_timeserver_sync_next()
 {
+	if (!ntp_enabled)
+		return;
+
 	if (ts_current) {
 		g_free(ts_current);
 		ts_current = NULL;
@@ -186,6 +191,9 @@ GSList *__connman_timeserver_get_all(struct connman_service *service)
 	const char *service_gw;
 	char **fallback_ts;
 	int index, i;
+
+	if (!ntp_enabled)
+		return NULL;
 
 	if (__connman_clock_timeupdates() == TIME_UPDATES_MANUAL)
 		return NULL;
@@ -292,6 +300,9 @@ int __connman_timeserver_sync(struct connman_service *default_service)
 {
 	struct connman_service *service;
 
+	if (!ntp_enabled)
+		return 0;
+
 	if (default_service)
 		service = default_service;
 	else
@@ -394,10 +405,11 @@ static void timeserver_stop(void)
 
 int __connman_timeserver_system_set(char **servers)
 {
-	save_timeservers(servers);
+	if (ntp_enabled) {
+		save_timeservers(servers);
 
-	__connman_timeserver_sync(NULL);
-
+		__connman_timeserver_sync(NULL);
+	}
 	return 0;
 }
 
@@ -405,7 +417,7 @@ char **__connman_timeserver_system_get()
 {
 	char **servers;
 
-	servers = load_timeservers();
+	servers = ntp_enabled ? load_timeservers() : NULL;
 	return servers;
 }
 
@@ -422,18 +434,21 @@ static struct connman_notifier timeserver_notifier = {
 	.default_changed	= default_changed,
 };
 
-int __connman_timeserver_init(void)
+int __connman_timeserver_init(gboolean enabled)
 {
-	DBG("");
-
-	connman_notifier_register(&timeserver_notifier);
-
+	if (enabled) {
+		DBG("");
+		connman_notifier_register(&timeserver_notifier);
+		ntp_enabled = true;
+	}
 	return 0;
 }
 
 void __connman_timeserver_cleanup(void)
 {
-	DBG("");
-
-	connman_notifier_unregister(&timeserver_notifier);
+	if (ntp_enabled) {
+		DBG("");
+		connman_notifier_unregister(&timeserver_notifier);
+		ntp_enabled = false;
+	}
 }
