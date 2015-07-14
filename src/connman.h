@@ -442,8 +442,8 @@ int __connman_utsname_set_domainname(const char *domainname);
 
 #include <connman/timeserver.h>
 
-int __connman_timeserver_init(void);
-void __connman_timeserver_cleanup(void);
+int __connman_timeserver_init(gboolean enabled);
+void __connman_timeserver_cleanup();
 
 char **__connman_timeserver_system_get();
 
