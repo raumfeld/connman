@@ -672,3 +672,8 @@ int connman_tethering_get_target_index_for_device(struct connman_device *device)
 
 	return connman_device_get_index(device);
 }
+
+bool connman_tethering_is_bridged_ap_mode_active()
+{
+	return current_tethering_mode == TETHERING_MODE_BRIDGED_AP;
+}
