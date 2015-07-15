@@ -6783,10 +6783,11 @@ struct connman_service * __connman_service_create_from_network(struct connman_ne
 		return NULL;
 
 	device = connman_network_get_device(network);
-	if (connman_tethering_is_bridged_ap_mode_active() && device
-			&& g_strcmp0(connman_device_get_string(device, "Interface"), "eth1") == 0) {
-		// don't create a service for eth1 when in bridged-AP mode.
-		DBG("skipping service for eth1, as bridged-AP mode is active");
+	if (device && g_strcmp0(connman_device_get_string(device, "Interface"), "eth1") == 0) {
+		// Don't create a service for eth1, as we are using it only as part of a bridged setup.
+		// This avoids problems with two DHCP clients trying to run on the same network interface
+		// (tether).
+		DBG("skipping creation of service for eth1");
 		return NULL;
 	}
 
