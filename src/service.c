@@ -6782,6 +6782,14 @@ struct connman_service * __connman_service_create_from_network(struct connman_ne
 	if (!group)
 		return NULL;
 
+	device = connman_network_get_device(network);
+	if (connman_tethering_is_bridged_ap_mode_active() && device
+			&& g_strcmp0(connman_device_get_string(device, "Interface"), "eth1") == 0) {
+		// don't create a service for eth1 when in bridged-AP mode.
+		DBG("skipping service for eth1, as bridged-AP mode is active");
+		return NULL;
+	}
+
 	name = g_strdup_printf("%s_%s_%s",
 			__connman_network_get_type(network), ident, group);
 	service = service_get(name);
@@ -6846,7 +6854,6 @@ struct connman_service * __connman_service_create_from_network(struct connman_ne
 	service_schedule_added(service);
 
 	if (service->favorite) {
-		device = connman_network_get_device(service->network);
 		if (device && !connman_device_get_scanning(device)) {
 
 			switch (service->type) {

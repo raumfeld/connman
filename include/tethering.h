@@ -35,6 +35,7 @@ extern "C" {
  */
 
 int connman_tethering_get_target_index_for_device(struct connman_device *device);
+bool connman_tethering_is_bridged_ap_mode_active();
 
 #ifdef __cplusplus
 }
