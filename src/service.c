@@ -4458,6 +4458,11 @@ static void service_schedule_removed(struct connman_service *service)
 
 static bool allow_property_changed(struct connman_service *service)
 {
+	if (!service || !service->path) {
+		DBG("service %p or path is NULL", service);
+		return false;
+	}
+
 	if (g_hash_table_lookup_extended(services_notify->add, service->path,
 					NULL, NULL)) {
 		DBG("no property updates for service %p", service);
