@@ -170,7 +170,7 @@ static void add_network(struct connman_device *device,
 			struct ethernet_data *ethernet)
 {
 	struct connman_network *network;
-	int original_index, index, vid;
+	int original_index, index;
 	char *ifname;
 
 	network = connman_network_create("carrier",
