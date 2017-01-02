@@ -943,7 +943,7 @@ static DBusMessage *set_property(DBusConnection *conn,
 	struct connman_technology *technology = data;
 	DBusMessageIter iter, value;
 	const char *name;
-	int type, err;
+	int type;
 
 	DBG("conn %p", conn);
 
