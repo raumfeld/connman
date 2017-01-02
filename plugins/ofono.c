@@ -324,7 +324,7 @@ static void set_connected(struct modem_data *modem,
 						context->ipv4_address);
 	}
 
-	method = modem->context->ipv6_method;
+	method = context->ipv6_method;
 	connman_service_create_ip6config(service, index, index);
 	connman_network_set_ipv6_method(context->network, method);
 
