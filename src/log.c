@@ -39,7 +39,7 @@ static const char *program_path;
 
 static void* libraumfeld_handle = NULL;
 static void (*raumfeld_trace_init_func)(int) = NULL;
-static void (*raumfeld_trace_callers_func)(void) = NULL;
+static void (*raumfeld_report_error_func)(const char*) = NULL;
 
 /**
  * connman_info:
@@ -117,8 +117,8 @@ static void signal_handler(int signo)
 {
 	connman_error("Aborting (signal %d) [%s]", signo, program_exec);
 
-	if (raumfeld_trace_callers_func)
-		raumfeld_trace_callers_func();
+	if (raumfeld_report_error_func)
+		raumfeld_report_error_func("connmand crashed");
 	else
 		print_backtrace(program_path, program_exec, 2);
 
@@ -148,8 +148,8 @@ static void backtrace_setup(void)
 	{
 		if ((raumfeld_trace_init_func = dlsym(libraumfeld_handle, "raumfeld_trace_init")) != NULL)
 		{
-			raumfeld_trace_init_func(5);
-			raumfeld_trace_callers_func = dlsym(libraumfeld_handle, "raumfeld_trace_callers");
+			raumfeld_trace_init_func(0);
+			raumfeld_report_error_func = dlsym(libraumfeld_handle, "raumfeld_report_error");
 		}
 	}
 }
