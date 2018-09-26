@@ -3172,15 +3172,16 @@ static void sta_remove_callback(int result,
 	if ((result < 0) || (info->wifi->ap_supported != WIFI_AP_SUPPORTED)) {
 		info->wifi->tethering = true;
 
-		g_free(info->ifname);
-		g_free(info->ssid);
-		g_free(info);
-
-		if (info->wifi->ap_supported == WIFI_AP_SUPPORTED){
+		if (info->wifi->ap_supported == WIFI_AP_SUPPORTED) {
 			g_free(info->wifi->tethering_param->ssid);
 			g_free(info->wifi->tethering_param);
 			info->wifi->tethering_param = NULL;
 		}
+
+		g_free(info->ifname);
+		g_free(info->ssid);
+		g_free(info);
+
 		return;
 	}
 
