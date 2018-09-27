@@ -139,7 +139,7 @@ endif
 
 src_connmand_LDADD = gdbus/libgdbus-internal.la $(builtin_libadd) \
 			@GLIB_LIBS@ @DBUS_LIBS@ @GNUTLS_LIBS@ \
-			-lresolv -ldl -lrt
+			-lresolv -lunwind -ldl -lrt
 
 src_connmand_LDFLAGS = -Wl,--export-dynamic \
 				-Wl,--version-script=$(srcdir)/src/connman.ver
@@ -317,7 +317,7 @@ noinst_PROGRAMS += unit/test-ippool
 unit_test_ippool_SOURCES = $(backtrace_sources) src/log.c src/dbus.c \
 					src/error.c src/ippool.c unit/test-ippool.c
 unit_test_ippool_LDADD = gdbus/libgdbus-internal.la \
-				@GLIB_LIBS@ @DBUS_LIBS@ -ldl
+				@GLIB_LIBS@ @DBUS_LIBS@ -lunwind -ldl
 
 TESTS = unit/test-ippool
 
@@ -372,14 +372,14 @@ tools_session_test_SOURCES = $(backtrace_sources) src/log.c src/dbus.c src/error
 		tools/session-test.c tools/session-utils.c tools/manager-api.c \
 		tools/session-api.c tools/session-test.h
 tools_session_test_LDADD = gdbus/libgdbus-internal.la \
-				@GLIB_LIBS@ @DBUS_LIBS@ -ldl
+				@GLIB_LIBS@ @DBUS_LIBS@ -lunwind -ldl
 
 if XTABLES
 noinst_PROGRAMS += tools/iptables-test tools/iptables-unit
 
 tools_iptables_test_SOURCES = $(backtrace_sources) src/log.c src/iptables.c \
 				tools/iptables-test.c
-tools_iptables_test_LDADD = @GLIB_LIBS@ @XTABLES_LIBS@ -ldl
+tools_iptables_test_LDADD = @GLIB_LIBS@ @XTABLES_LIBS@ -lunwind -ldl
 
 tools_iptables_unit_CFLAGS = @DBUS_CFLAGS@ @GLIB_CFLAGS@ @XTABLES_CFLAGS@ \
 		-DIPTABLES_SAVE=\""${IPTABLES_SAVE}"\"
@@ -387,7 +387,7 @@ tools_iptables_unit_SOURCES = $(backtrace_sources) src/log.c \
 		src/iptables.c src/firewall-iptables.c src/nat.c \
 		tools/iptables-unit.c
 tools_iptables_unit_LDADD = gdbus/libgdbus-internal.la \
-				@GLIB_LIBS@ @DBUS_LIBS@ @XTABLES_LIBS@ -ldl
+				@GLIB_LIBS@ @DBUS_LIBS@ @XTABLES_LIBS@ -lunwind -ldl
 endif
 
 tools_dnsproxy_test_SOURCES = tools/dnsproxy-test.c

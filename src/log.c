@@ -37,10 +37,6 @@
 static const char *program_exec;
 static const char *program_path;
 
-static void* libraumfeld_handle = NULL;
-static void (*raumfeld_trace_init_func)(int) = NULL;
-static void (*raumfeld_report_error_func)(const char*) = NULL;
-
 /**
  * connman_info:
  * @format: format string
@@ -117,10 +113,7 @@ static void signal_handler(int signo)
 {
 	connman_error("Aborting (signal %d) [%s]", signo, program_exec);
 
-	if (raumfeld_report_error_func)
-		raumfeld_report_error_func("connmand crashed");
-	else
-		print_backtrace(program_path, program_exec, 2);
+	print_backtrace(program_path, program_exec, 2);
 
 	exit(EXIT_FAILURE);
 }
@@ -140,18 +133,6 @@ static void signal_setup(sighandler_t handler)
 	sigaction(SIGSEGV, &sa, NULL);
 	sigaction(SIGABRT, &sa, NULL);
 	sigaction(SIGPIPE, &sa, NULL);
-}
-
-static void backtrace_setup(void)
-{
-	if ((libraumfeld_handle = dlopen("libraumfeld-1.0.so", RTLD_NOW)) != NULL)
-	{
-		if ((raumfeld_trace_init_func = dlsym(libraumfeld_handle, "raumfeld_trace_init")) != NULL)
-		{
-			raumfeld_trace_init_func(0);
-			raumfeld_report_error_func = dlsym(libraumfeld_handle, "raumfeld_report_error");
-		}
-	}
 }
 
 extern struct connman_debug_desc __start___debug[];
@@ -226,10 +207,7 @@ int __connman_log_init(const char *program, const char *debug,
 		option |= LOG_PERROR;
 
 	if (backtrace)
-	{
-		backtrace_setup();
 		signal_setup(signal_handler);
-	}
 
 	openlog(basename(program), option, LOG_DAEMON);
 
@@ -245,10 +223,7 @@ void __connman_log_cleanup(gboolean backtrace)
 	closelog();
 
 	if (backtrace)
-	{
 		signal_setup(SIG_DFL);
-		dlclose(libraumfeld_handle);
-	}
 
 	g_strfreev(enabled);
 }

@@ -34,115 +34,53 @@
 
 #include "connman.h"
 
-void print_backtrace(const char* program_path, const char* program_exec,
-		unsigned int offset)
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+
+static const char* get_location(void* addr)
 {
-	void *frames[99];
-	size_t n_ptrs;
-	unsigned int i;
-	int outfd[2], infd[2];
-	int pathlen;
-	pid_t pid;
+	Dl_info info;
 
-	if (!program_exec)
-		return;
-
-	pathlen = strlen(program_path);
-
-	n_ptrs = backtrace(frames, G_N_ELEMENTS(frames));
-	if (n_ptrs < offset)
-		return;
-
-	if (pipe(outfd) < 0)
-		return;
-
-	if (pipe(infd) < 0) {
-		close(outfd[0]);
-		close(outfd[1]);
-		return;
+	if (dladdr(addr, &info))
+	{
+		if (info.dli_fname && *info.dli_fname)
+		return info.dli_fname;
 	}
 
-	pid = fork();
-	if (pid < 0) {
-		close(outfd[0]);
-		close(outfd[1]);
-		close(infd[0]);
-		close(infd[1]);
+	return NULL;
+}
+
+void print_backtrace(const char* program_path, const char* program_exec, unsigned int offset)
+{
+	unw_cursor_t  cursor;
+	unw_context_t context;
+	unw_word_t    pc;
+
+	char   buffer[256];
+	size_t buffer_size = sizeof(buffer);
+
+	if (unw_getcontext(&context) != 0 || unw_init_local(&cursor, &context) != 0)
 		return;
-	}
 
-	if (pid == 0) {
-		close(outfd[1]);
-		close(infd[0]);
-
-		dup2(outfd[0], STDIN_FILENO);
-		dup2(infd[1], STDOUT_FILENO);
-
-		execlp("addr2line", "-C", "-f", "-e", program_exec, NULL);
-
-		exit(EXIT_FAILURE);
-	}
-
-	close(outfd[0]);
-	close(infd[1]);
-
-	connman_error("++++++++ backtrace ++++++++");
-
-	for (i = offset; i < n_ptrs - 1; i++) {
-		Dl_info info;
-		char addr[20], buf[PATH_MAX * 2];
-		int len, written;
-		char *ptr, *pos;
-
-		dladdr(frames[i], &info);
-
-		len = snprintf(addr, sizeof(addr), "%p\n", frames[i]);
-		if (len < 0)
-			break;
-
-		written = write(outfd[1], addr, len);
-		if (written < 0)
-			break;
-
-		len = read(infd[0], buf, sizeof(buf) - 1);
-		if (len < 0)
-			break;
-
-		buf[len] = '\0';
-
-		pos = strchr(buf, '\n');
-		if (!pos) {
-			connman_error("Error in backtrace format");
-			break;
-		}
-
-		*pos++ = '\0';
-
-		if (strcmp(buf, "??") == 0) {
-			connman_error("#%-2u %p in %s", i - offset,
-						frames[i], info.dli_fname);
-			continue;
-		}
-
-		ptr = strchr(pos, '\n');
-		if (!ptr) {
-			connman_error("Error in backtrace format");
-			break;
-		}
-
-		*ptr++ = '\0';
-
-		if (strncmp(pos, program_path, pathlen) == 0)
-			pos += pathlen + 1;
-
-		connman_error("#%-2u %p in %s() at %s", i - offset,
-						frames[i], buf, pos);
-	}
+	int max_depth = 50;
 
 	connman_error("+++++++++++++++++++++++++++");
 
-	kill(pid, SIGTERM);
+	while (max_depth-- != 0 && unw_step(&cursor) > 0 && unw_get_reg(&cursor, UNW_REG_IP, &pc) == 0) {
+		unw_word_t offset;
+		int result = unw_get_proc_name(&cursor, buffer, buffer_size, &offset);
 
-	close(outfd[1]);
-	close(infd[0]);
+		if (-result == UNW_ENOMEM)
+			result = 0;
+		else if (result != 0)
+			offset = 0;
+
+		{
+			const char* symbol = result == 0 ? buffer : "???";
+			const char* location = get_location((void*) (pc - offset));
+			connman_error("  %s +%d from %s\n", symbol, offset, location ?: "??");
+		}
+	}
+
+	connman_error("+++++++++++++++++++++++++++");
 }
