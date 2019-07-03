@@ -55,12 +55,8 @@ struct connman_dhcp {
 
 	unsigned int timeout;
 
-	GDHCPClient *ipv4ll_client;
 	GDHCPClient *dhcp_client;
-	char *ipv4ll_debug_prefix;
 	char *dhcp_debug_prefix;
-
-	bool ipv4ll_running;
 };
 
 static GHashTable *ipconfig_table;
@@ -76,20 +72,6 @@ static void dhcp_free(struct connman_dhcp *dhcp)
 	dhcp->pac = NULL;
 
 	g_free(dhcp);
-}
-
-static void ipv4ll_stop_client(struct connman_dhcp *dhcp)
-{
-	if (!dhcp->ipv4ll_client)
-		return;
-
-	g_dhcp_client_stop(dhcp->ipv4ll_client);
-	g_dhcp_client_unref(dhcp->ipv4ll_client);
-	dhcp->ipv4ll_client = NULL;
-	dhcp->ipv4ll_running = false;
-
-	g_free(dhcp->ipv4ll_debug_prefix);
-	dhcp->ipv4ll_debug_prefix = NULL;
 }
 
 static bool apply_dhcp_invalidate_on_network(struct connman_dhcp *dhcp)
@@ -182,61 +164,6 @@ static void dhcp_debug(const char *str, void *data)
 	connman_info("%s: %s", (const char *) data, str);
 }
 
-static void ipv4ll_lost_cb(GDHCPClient *dhcp_client, gpointer user_data);
-static void ipv4ll_available_cb(GDHCPClient *ipv4ll_client, gpointer user_data);
-
-static int ipv4ll_start_client(struct connman_dhcp *dhcp)
-{
-	GDHCPClient *ipv4ll_client;
-	GDHCPClientError error;
-	const char *hostname;
-	int index;
-	int err;
-
-	if (dhcp->ipv4ll_client)
-		return -EALREADY;
-
-	index = __connman_ipconfig_get_index(dhcp->ipconfig);
-
-	ipv4ll_client = g_dhcp_client_new(G_DHCP_IPV4LL, index, &error);
-	if (error != G_DHCP_CLIENT_ERROR_NONE)
-		return -EINVAL;
-
-	if (getenv("CONNMAN_DHCP_DEBUG")) {
-		dhcp->ipv4ll_debug_prefix = g_strdup_printf("IPv4LL index %d",
-							index);
-		g_dhcp_client_set_debug(ipv4ll_client, dhcp_debug,
-					dhcp->ipv4ll_debug_prefix);
-	}
-
-	g_dhcp_client_set_id(ipv4ll_client);
-
-	if (dhcp->network) {
-		hostname = connman_utsname_get_hostname();
-		if (hostname)
-			g_dhcp_client_set_send(ipv4ll_client,
-						G_DHCP_HOST_NAME, hostname);
-	}
-
-	g_dhcp_client_register_event(ipv4ll_client,
-			G_DHCP_CLIENT_EVENT_IPV4LL_LOST, ipv4ll_lost_cb, dhcp);
-
-	g_dhcp_client_register_event(ipv4ll_client,
-			G_DHCP_CLIENT_EVENT_IPV4LL_AVAILABLE,
-						ipv4ll_available_cb, dhcp);
-
-	dhcp->ipv4ll_client = ipv4ll_client;
-
-	err = g_dhcp_client_start(dhcp->ipv4ll_client, NULL);
-	if (err < 0) {
-		ipv4ll_stop_client(dhcp);
-		return err;
-	}
-
-	dhcp->ipv4ll_running = true;
-	return 0;
-}
-
 static gboolean dhcp_retry_cb(gpointer user_data)
 {
 	struct connman_dhcp *dhcp = user_data;
@@ -254,8 +181,7 @@ static void no_lease_cb(GDHCPClient *dhcp_client, gpointer user_data)
 	struct connman_dhcp *dhcp = user_data;
 	int err;
 
-	DBG("No lease available ipv4ll %d client %p", dhcp->ipv4ll_running,
-		dhcp->ipv4ll_client);
+	DBG("No lease available");
 
 	if (dhcp->timeout > 0)
 		g_source_remove(dhcp->timeout);
@@ -263,15 +189,9 @@ static void no_lease_cb(GDHCPClient *dhcp_client, gpointer user_data)
 	dhcp->timeout = g_timeout_add_seconds(RATE_LIMIT_INTERVAL,
 						dhcp_retry_cb,
 						dhcp);
-	if (dhcp->ipv4ll_running)
-		return;
-
-	err = ipv4ll_start_client(dhcp);
-	if (err < 0)
-		DBG("Cannot start ipv4ll client (%d/%s)", err, strerror(-err));
 
 	/* Only notify upper layer if we have a problem */
-	dhcp_invalidate(dhcp, !dhcp->ipv4ll_running);
+	dhcp_invalidate(dhcp, true);
 }
 
 static void lease_lost_cb(GDHCPClient *dhcp_client, gpointer user_data)
@@ -281,21 +201,6 @@ static void lease_lost_cb(GDHCPClient *dhcp_client, gpointer user_data)
 	DBG("Lease lost");
 
 	/* Upper layer will decide what to do, e.g. nothing or retry. */
-	dhcp_invalidate(dhcp, true);
-}
-
-static void ipv4ll_lost_cb(GDHCPClient *dhcp_client, gpointer user_data)
-{
-	struct connman_dhcp *dhcp = user_data;
-
-	DBG("Lease lost");
-
-	ipv4ll_stop_client(dhcp);
-
-	/*
-	 * Since we lost our IPv4LL configuration we might as notify
-	 * the upper layers.
-	 */
 	dhcp_invalidate(dhcp, true);
 }
 
@@ -444,11 +349,6 @@ static void lease_available_cb(GDHCPClient *dhcp_client, gpointer user_data)
 
 	DBG("Lease available");
 
-	if (dhcp->ipv4ll_client) {
-		ipv4ll_stop_client(dhcp);
-		dhcp_invalidate(dhcp, false);
-	}
-
 	c_address = __connman_ipconfig_get_local(dhcp->ipconfig);
 	c_gateway = __connman_ipconfig_get_gateway(dhcp->ipconfig);
 	c_prefixlen = __connman_ipconfig_get_prefixlen(dhcp->ipconfig);
@@ -522,49 +422,6 @@ done:
 	g_free(address);
 	g_free(netmask);
 	g_free(gateway);
-}
-
-static void ipv4ll_available_cb(GDHCPClient *ipv4ll_client, gpointer user_data)
-{
-	struct connman_dhcp *dhcp = user_data;
-	enum connman_ipconfig_method old_method;
-	char *address, *netmask;
-	unsigned char prefixlen;
-
-	DBG("IPV4LL available");
-
-	address = g_dhcp_client_get_address(ipv4ll_client);
-	netmask = g_dhcp_client_get_netmask(ipv4ll_client);
-
-	prefixlen = connman_ipaddress_calc_netmask_len(netmask);
-
-	old_method = __connman_ipconfig_get_method(dhcp->ipconfig);
-	__connman_ipconfig_set_method(dhcp->ipconfig,
-						CONNMAN_IPCONFIG_METHOD_AUTO);
-
-	/*
-	 * Notify IPv4.Configuration's method is AUTO now.
-	 *
-	 * This is the case DHCP failed thus ConnMan used IPv4LL to get an
-	 * address. Set IPv4.Configuration method to AUTO allows user to
-	 * ask for a DHCP address by setting the method again to DHCP.
-	 */
-	if (old_method == CONNMAN_IPCONFIG_METHOD_DHCP) {
-		struct connman_service *service =
-			connman_service_lookup_from_network(dhcp->network);
-
-		if (service)
-			__connman_service_notify_ipv4_configuration(service);
-	}
-
-	__connman_ipconfig_set_local(dhcp->ipconfig, address);
-	__connman_ipconfig_set_prefixlen(dhcp->ipconfig, prefixlen);
-	__connman_ipconfig_set_gateway(dhcp->ipconfig, NULL);
-
-	dhcp_valid(dhcp);
-
-	g_free(address);
-	g_free(netmask);
 }
 
 static int dhcp_initialize(struct connman_dhcp *dhcp)
@@ -654,8 +511,6 @@ static int dhcp_release(struct connman_dhcp *dhcp)
 
 	g_free(dhcp->dhcp_debug_prefix);
 	dhcp->dhcp_debug_prefix = NULL;
-
-	ipv4ll_stop_client(dhcp);
 
 	return 0;
 }
