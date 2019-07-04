@@ -193,6 +193,9 @@ static int ipv4ll_start_client(struct connman_dhcp *dhcp)
 	int index;
 	int err;
 
+        if (!connman_setting_get_bool("EnableIPv4LL"))
+                return 0;
+
 	if (dhcp->ipv4ll_client)
 		return -EALREADY;
 

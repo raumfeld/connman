@@ -91,6 +91,7 @@ static struct {
 	bool auto_connect_roaming_services;
 	bool acd;
 	bool use_gateways_as_timeservers;
+	bool enable_ipv4ll;
 } connman_settings  = {
 	.bg_scan = true,
 	.pref_timeservers = NULL,
@@ -113,6 +114,7 @@ static struct {
 	.auto_connect_roaming_services = false,
 	.acd = false,
 	.use_gateways_as_timeservers = false,
+	.enable_ipv4ll = true,
 };
 
 #define CONF_BG_SCAN                    "BackgroundScanning"
@@ -136,6 +138,7 @@ static struct {
 #define CONF_AUTO_CONNECT_ROAMING_SERVICES "AutoConnectRoamingServices"
 #define CONF_ACD                        "AddressConflictDetection"
 #define CONF_USE_GATEWAYS_AS_TIMESERVERS "UseGatewaysAsTimeservers"
+#define CONF_ENABLE_IPV4LL              "EnableIPv4LL"
 
 static const char *supported_options[] = {
 	CONF_BG_SCAN,
@@ -158,6 +161,7 @@ static const char *supported_options[] = {
 	CONF_AUTO_CONNECT_ROAMING_SERVICES,
 	CONF_ACD,
 	CONF_USE_GATEWAYS_AS_TIMESERVERS,
+	CONF_ENABLE_IPV4LL,
 	NULL
 };
 
@@ -476,6 +480,16 @@ static void parse_config(GKeyFile *config)
 		connman_settings.use_gateways_as_timeservers = boolean;
 
 	g_clear_error(&error);
+
+	boolean = __connman_config_get_bool(config, "General",
+					CONF_ENABLE_IPV4LL, &error);
+	if (!error) {
+		connman_settings.enable_ipv4ll = boolean;
+		if (!boolean)
+			connman_info("IPv4LL support disabled by main config.");
+	}
+
+	g_clear_error(&error);
 }
 
 static int config_init(const char *file)
@@ -694,6 +708,9 @@ bool connman_setting_get_bool(const char *key)
 
 	if (g_str_equal(key, CONF_USE_GATEWAYS_AS_TIMESERVERS))
 		return connman_settings.use_gateways_as_timeservers;
+
+	if (g_str_equal(key, CONF_ENABLE_IPV4LL))
+		return connman_settings.enable_ipv4ll;
 
 	return false;
 }
