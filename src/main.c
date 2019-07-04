@@ -81,6 +81,7 @@ static struct {
 	char *vendor_class_id;
 	bool enable_online_check;
 	bool auto_connect_roaming_services;
+	bool enable_ipv4ll;
 } connman_settings  = {
 	.bg_scan = true,
 	.pref_timeservers = NULL,
@@ -100,6 +101,7 @@ static struct {
 	.vendor_class_id = NULL,
 	.enable_online_check = true,
 	.auto_connect_roaming_services = false,
+	.enable_ipv4ll = true,
 };
 
 #define CONF_BG_SCAN                    "BackgroundScanning"
@@ -120,6 +122,7 @@ static struct {
 #define CONF_VENDOR_CLASS_ID            "VendorClassID"
 #define CONF_ENABLE_ONLINE_CHECK        "EnableOnlineCheck"
 #define CONF_AUTO_CONNECT_ROAMING_SERVICES "AutoConnectRoamingServices"
+#define CONF_ENABLE_IPV4LL              "EnableIPv4LL"
 
 static const char *supported_options[] = {
 	CONF_BG_SCAN,
@@ -140,6 +143,7 @@ static const char *supported_options[] = {
 	CONF_VENDOR_CLASS_ID,
 	CONF_ENABLE_ONLINE_CHECK,
 	CONF_AUTO_CONNECT_ROAMING_SERVICES,
+	CONF_ENABLE_IPV4LL,
 	NULL
 };
 
@@ -431,6 +435,16 @@ static void parse_config(GKeyFile *config)
 		connman_settings.auto_connect_roaming_services = boolean;
 
 	g_clear_error(&error);
+
+	boolean = __connman_config_get_bool(config, "General",
+					CONF_ENABLE_IPV4LL, &error);
+	if (!error) {
+		connman_settings.enable_ipv4ll = boolean;
+		if (!boolean)
+			connman_info("IPv4LL support disabled by main config.");
+	}
+
+	g_clear_error(&error);
 }
 
 static int config_init(const char *file)
@@ -647,6 +661,9 @@ bool connman_setting_get_bool(const char *key)
 
 	if (g_str_equal(key, CONF_AUTO_CONNECT_ROAMING_SERVICES))
 		return connman_settings.auto_connect_roaming_services;
+
+	if (g_str_equal(key, CONF_ENABLE_IPV4LL))
+		return connman_settings.enable_ipv4ll;
 
 	return false;
 }
