@@ -181,6 +181,11 @@ address will be chosen instead (according to RFC3927). If an address conflict
 occurs for an address offered via DHCP, ConnMan send a DHCP DECLINE once and
 for the second conflict resort to finding an IPv4LL address.
 Default value is false.
+.TP
+.BI EnableIPv4LL=true\ \fR|\fB\ false
+Assign a link-local address from the IPv4 address block 169.254.0.0/16 in case
+that no address can be obtained using DHCP.
+Default value is true.
 .SH "EXAMPLE"
 The following example configuration disables hostname updates and enables
 ethernet tethering.
