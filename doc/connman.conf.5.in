@@ -160,6 +160,11 @@ Default value is true.
 Automatically connect roaming services. This is not recommended unless you know
 you won't have any billing problem.
 Default value is false.
+.TP
+.BI EnableIPv4LL=true\ \fR|\fB\ false
+Assign a link-local address from the IPv4 address block 169.254.0.0/16 in case
+that no address can be obtained using DHCP.
+Default value is true.
 .SH "EXAMPLE"
 The following example configuration disables hostname updates and enables
 ethernet tethering.
