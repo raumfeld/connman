@@ -2670,18 +2670,14 @@ error:
 
 bool connman_inet_is_ipv6_supported()
 {
-	// For Raumfeld, hardcode IPv6 to never be supported. This avoids problems with
-	// connection state 'ready' being signalled for IPv6, while IPv4 is not yet
-	// connected, which is something that confuses Raumfeld's master process.
-	return false;
-//	int sk;
-//
-//	sk = socket(PF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-//	if (sk < 0)
-//		return false;
-//
-//	close(sk);
-//	return true;
+	int sk;
+
+	sk = socket(PF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (sk < 0)
+		return false;
+
+	close(sk);
+	return true;
 }
 
 int __connman_inet_get_interface_address(int index, int family, void *address)
